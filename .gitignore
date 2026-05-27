@@ -13,6 +13,8 @@ dist/
 .venv/
 venv/
 env/
+.pytest_cache/
+.ruff_cache/
 
 # Django
 *.log

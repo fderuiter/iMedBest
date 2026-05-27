@@ -3,7 +3,7 @@ name = "imedbest"
 version = "0.1.0"
 description = "iMedBest Enterprise Django Backend"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = "==3.12.*"
 dependencies = [
     "django>=5.0.0,<5.1.0",
     "django-environ>=0.11.0",

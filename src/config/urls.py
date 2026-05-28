@@ -22,11 +22,13 @@ from ninja import NinjaAPI
 from audit.api import router as audit_router
 from clinical.api import router as clinical_router
 from users.api import router as users_router
+from jobs.api import router as jobs_router
 
 api = NinjaAPI()
 api.add_router("/clinical/", clinical_router)
 api.add_router("/users/", users_router)
 api.add_router("/audit/", audit_router)
+api.add_router("/jobs/", jobs_router)
 
 urlpatterns = [
     path("admin/", admin.site.urls),

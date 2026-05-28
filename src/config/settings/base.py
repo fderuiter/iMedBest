@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "users.apps.UsersConfig",
     "clinical.apps.ClinicalConfig",
     "audit.apps.AuditConfig",
+    "jobs.apps.JobsConfig",
 ]
 
 MIDDLEWARE = [

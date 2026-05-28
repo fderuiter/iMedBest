@@ -6,6 +6,9 @@ from ninja import ModelSchema, Router
 from .export import generate_cdisc_export
 from .models import Coding, Form, Interval, Query, Record, RecordRevision, Site, Study, Subject, Variable, Visit
 
+from jobs.models import Job
+from jobs.api import JobSchemaOut
+
 router = Router()
 
 # --- Schemas ---
@@ -169,10 +172,14 @@ class RecordRevisionSchemaOut(ModelSchema):
 
 
 # L1: Study
-@router.post("/studies", response=StudySchemaOut)
-def sync_study(request, payload: StudySchemaIn):
-    study, _ = Study.objects.update_or_create(external_id=payload.external_id, defaults={"name": payload.name})
-    return study
+@router.post("/studies", response={202: JobSchemaOut})
+def sync_study(request, payload: list[StudySchemaIn] | StudySchemaIn):
+    payload_data = [item.dict() for item in payload] if isinstance(payload, list) else [payload.dict()]
+    job = Job.objects.create(
+        job_type="sync_study",
+        payload=payload_data
+    )
+    return 202, job
 
 
 @router.get("/studies", response=list[StudySchemaOut])
@@ -181,13 +188,14 @@ def list_studies(request):
 
 
 # L1: Site
-@router.post("/sites", response=SiteSchemaOut)
-def sync_site(request, payload: SiteSchemaIn):
-    study = get_object_or_404(Study, external_id=payload.study_ext_id)
-    site, _ = Site.objects.update_or_create(
-        external_id=payload.external_id, defaults={"study": study, "name": payload.name}
+@router.post("/sites", response={202: JobSchemaOut})
+def sync_site(request, payload: list[SiteSchemaIn] | SiteSchemaIn):
+    payload_data = [item.dict() for item in payload] if isinstance(payload, list) else [payload.dict()]
+    job = Job.objects.create(
+        job_type="sync_site",
+        payload=payload_data
     )
-    return site
+    return 202, job
 
 
 @router.get("/sites", response=list[SiteSchemaOut])
@@ -196,13 +204,14 @@ def list_sites(request):
 
 
 # L2: Subject
-@router.post("/subjects", response=SubjectSchemaOut)
-def sync_subject(request, payload: SubjectSchemaIn):
-    site = get_object_or_404(Site, external_id=payload.site_ext_id)
-    subject, _ = Subject.objects.update_or_create(
-        external_id=payload.external_id, defaults={"site": site, "name": payload.name}
+@router.post("/subjects", response={202: JobSchemaOut})
+def sync_subject(request, payload: list[SubjectSchemaIn] | SubjectSchemaIn):
+    payload_data = [item.dict() for item in payload] if isinstance(payload, list) else [payload.dict()]
+    job = Job.objects.create(
+        job_type="sync_subject",
+        payload=payload_data
     )
-    return subject
+    return 202, job
 
 
 @router.get("/subjects", response=list[SubjectSchemaOut])
@@ -211,13 +220,14 @@ def list_subjects(request):
 
 
 # L2: Form
-@router.post("/forms", response=FormSchemaOut)
-def sync_form(request, payload: FormSchemaIn):
-    study = get_object_or_404(Study, external_id=payload.study_ext_id)
-    form, _ = Form.objects.update_or_create(
-        external_id=payload.external_id, defaults={"study": study, "name": payload.name}
+@router.post("/forms", response={202: JobSchemaOut})
+def sync_form(request, payload: list[FormSchemaIn] | FormSchemaIn):
+    payload_data = [item.dict() for item in payload] if isinstance(payload, list) else [payload.dict()]
+    job = Job.objects.create(
+        job_type="sync_form",
+        payload=payload_data
     )
-    return form
+    return 202, job
 
 
 @router.get("/forms", response=list[FormSchemaOut])
@@ -226,13 +236,14 @@ def list_forms(request):
 
 
 # L2: Interval
-@router.post("/intervals", response=IntervalSchemaOut)
-def sync_interval(request, payload: IntervalSchemaIn):
-    study = get_object_or_404(Study, external_id=payload.study_ext_id)
-    interval, _ = Interval.objects.update_or_create(
-        external_id=payload.external_id, defaults={"study": study, "name": payload.name}
+@router.post("/intervals", response={202: JobSchemaOut})
+def sync_interval(request, payload: list[IntervalSchemaIn] | IntervalSchemaIn):
+    payload_data = [item.dict() for item in payload] if isinstance(payload, list) else [payload.dict()]
+    job = Job.objects.create(
+        job_type="sync_interval",
+        payload=payload_data
     )
-    return interval
+    return 202, job
 
 
 @router.get("/intervals", response=list[IntervalSchemaOut])
@@ -241,13 +252,14 @@ def list_intervals(request):
 
 
 # L3: Variable
-@router.post("/variables", response=VariableSchemaOut)
-def sync_variable(request, payload: VariableSchemaIn):
-    form = get_object_or_404(Form, external_id=payload.form_ext_id)
-    variable, _ = Variable.objects.update_or_create(
-        external_id=payload.external_id, defaults={"form": form, "name": payload.name}
+@router.post("/variables", response={202: JobSchemaOut})
+def sync_variable(request, payload: list[VariableSchemaIn] | VariableSchemaIn):
+    payload_data = [item.dict() for item in payload] if isinstance(payload, list) else [payload.dict()]
+    job = Job.objects.create(
+        job_type="sync_variable",
+        payload=payload_data
     )
-    return variable
+    return 202, job
 
 
 @router.get("/variables", response=list[VariableSchemaOut])
@@ -256,14 +268,14 @@ def list_variables(request):
 
 
 # L3: Visit
-@router.post("/visits", response=VisitSchemaOut)
-def sync_visit(request, payload: VisitSchemaIn):
-    subject = get_object_or_404(Subject, external_id=payload.subject_ext_id)
-    interval = get_object_or_404(Interval, external_id=payload.interval_ext_id)
-    visit, _ = Visit.objects.update_or_create(
-        external_id=payload.external_id, defaults={"subject": subject, "interval": interval}
+@router.post("/visits", response={202: JobSchemaOut})
+def sync_visit(request, payload: list[VisitSchemaIn] | VisitSchemaIn):
+    payload_data = [item.dict() for item in payload] if isinstance(payload, list) else [payload.dict()]
+    job = Job.objects.create(
+        job_type="sync_visit",
+        payload=payload_data
     )
-    return visit
+    return 202, job
 
 
 @router.get("/visits", response=list[VisitSchemaOut])
@@ -272,14 +284,14 @@ def list_visits(request):
 
 
 # L4: Record
-@router.post("/records", response=RecordSchemaOut)
-def sync_record(request, payload: RecordSchemaIn):
-    visit = get_object_or_404(Visit, external_id=payload.visit_ext_id)
-    variable = get_object_or_404(Variable, external_id=payload.variable_ext_id)
-    record, _ = Record.objects.update_or_create(
-        external_id=payload.external_id, defaults={"visit": visit, "variable": variable, "value": payload.value}
+@router.post("/records", response={202: JobSchemaOut})
+def sync_record(request, payload: list[RecordSchemaIn] | RecordSchemaIn):
+    payload_data = [item.dict() for item in payload] if isinstance(payload, list) else [payload.dict()]
+    job = Job.objects.create(
+        job_type="sync_record",
+        payload=payload_data
     )
-    return record
+    return 202, job
 
 
 @router.get("/records", response=list[RecordSchemaOut])
@@ -288,13 +300,14 @@ def list_records(request):
 
 
 # L4: Coding
-@router.post("/codings", response=CodingSchemaOut)
-def sync_coding(request, payload: CodingSchemaIn):
-    record = get_object_or_404(Record, external_id=payload.record_ext_id)
-    coding, _ = Coding.objects.update_or_create(
-        external_id=payload.external_id, defaults={"record": record, "code": payload.code}
+@router.post("/codings", response={202: JobSchemaOut})
+def sync_coding(request, payload: list[CodingSchemaIn] | CodingSchemaIn):
+    payload_data = [item.dict() for item in payload] if isinstance(payload, list) else [payload.dict()]
+    job = Job.objects.create(
+        job_type="sync_coding",
+        payload=payload_data
     )
-    return coding
+    return 202, job
 
 
 @router.get("/codings", response=list[CodingSchemaOut])
@@ -303,13 +316,14 @@ def list_codings(request):
 
 
 # L4: Query
-@router.post("/queries", response=QuerySchemaOut)
-def sync_query(request, payload: QuerySchemaIn):
-    record = get_object_or_404(Record, external_id=payload.record_ext_id)
-    query, _ = Query.objects.update_or_create(
-        external_id=payload.external_id, defaults={"record": record, "text": payload.text}
+@router.post("/queries", response={202: JobSchemaOut})
+def sync_query(request, payload: list[QuerySchemaIn] | QuerySchemaIn):
+    payload_data = [item.dict() for item in payload] if isinstance(payload, list) else [payload.dict()]
+    job = Job.objects.create(
+        job_type="sync_query",
+        payload=payload_data
     )
-    return query
+    return 202, job
 
 
 @router.get("/queries", response=list[QuerySchemaOut])
@@ -318,13 +332,14 @@ def list_queries(request):
 
 
 # L4: RecordRevision
-@router.post("/revisions", response=RecordRevisionSchemaOut)
-def sync_revision(request, payload: RecordRevisionSchemaIn):
-    record = get_object_or_404(Record, external_id=payload.record_ext_id)
-    revision, _ = RecordRevision.objects.update_or_create(
-        external_id=payload.external_id, defaults={"record": record, "value": payload.value}
+@router.post("/revisions", response={202: JobSchemaOut})
+def sync_revision(request, payload: list[RecordRevisionSchemaIn] | RecordRevisionSchemaIn):
+    payload_data = [item.dict() for item in payload] if isinstance(payload, list) else [payload.dict()]
+    job = Job.objects.create(
+        job_type="sync_revision",
+        payload=payload_data
     )
-    return revision
+    return 202, job
 
 
 @router.get("/revisions", response=list[RecordRevisionSchemaOut])

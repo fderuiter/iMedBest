@@ -5,8 +5,28 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 
+class Provider(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    api_endpoint = models.URLField(blank=True, null=True)
+    auth_type = models.CharField(max_length=50, choices=[
+        ('OIDC', 'OIDC'),
+        ('API_KEY', 'API Key'),
+        ('OAUTH2', 'OAuth2'),
+        ('BASIC', 'Basic Auth')
+    ], default='API_KEY')
+    auth_credentials = models.JSONField(default=dict, blank=True)
+    hierarchy_mapping = models.JSONField(default=dict, blank=True)
+    schema_mapping = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+
 class ClinicalEntity(models.Model):
-    external_id = models.CharField(max_length=255, unique=True)
+    provider = models.ForeignKey(Provider, on_delete=models.CASCADE, null=True, blank=True, related_name="%(class)s_entities")
+    external_id = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -17,6 +37,7 @@ class ClinicalEntity(models.Model):
 
     class Meta:
         abstract = True
+        unique_together = ('provider', 'external_id')
 
     def save(self, *args, **kwargs):
         if hasattr(self, 'get_subject') and self.clinical_timestamp:
@@ -139,6 +160,7 @@ class RecordRevision(ClinicalEntity):
 @receiver(post_save, sender=Record)
 def create_record_revision(sender, instance, created, **kwargs):
     RecordRevision.objects.create(
+        provider=instance.provider,
         external_id=str(uuid.uuid4()),
         record=instance,
         value=instance.value,

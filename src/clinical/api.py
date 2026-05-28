@@ -14,13 +14,13 @@ router = Router()
 class StudySchemaIn(ModelSchema):
     class Meta:
         model = Study
-        fields = ["external_id", "name"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id", "name"]
 
 
 class StudySchemaOut(ModelSchema):
     class Meta:
         model = Study
-        fields = ["id", "external_id", "name", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "created_at", "updated_at"]
 
 
 class SiteSchemaIn(ModelSchema):
@@ -28,13 +28,13 @@ class SiteSchemaIn(ModelSchema):
 
     class Meta:
         model = Site
-        fields = ["external_id", "name"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id", "name"]
 
 
 class SiteSchemaOut(ModelSchema):
     class Meta:
         model = Site
-        fields = ["id", "external_id", "name", "study", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "study", "created_at", "updated_at"]
 
 
 class SubjectSchemaIn(ModelSchema):
@@ -42,13 +42,13 @@ class SubjectSchemaIn(ModelSchema):
 
     class Meta:
         model = Subject
-        fields = ["external_id", "name"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id", "name"]
 
 
 class SubjectSchemaOut(ModelSchema):
     class Meta:
         model = Subject
-        fields = ["id", "external_id", "name", "site", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "site", "created_at", "updated_at"]
 
 
 class FormSchemaIn(ModelSchema):
@@ -56,13 +56,13 @@ class FormSchemaIn(ModelSchema):
 
     class Meta:
         model = Form
-        fields = ["external_id", "name"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id", "name"]
 
 
 class FormSchemaOut(ModelSchema):
     class Meta:
         model = Form
-        fields = ["id", "external_id", "name", "study", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "study", "created_at", "updated_at"]
 
 
 class IntervalSchemaIn(ModelSchema):
@@ -70,13 +70,13 @@ class IntervalSchemaIn(ModelSchema):
 
     class Meta:
         model = Interval
-        fields = ["external_id", "name"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id", "name"]
 
 
 class IntervalSchemaOut(ModelSchema):
     class Meta:
         model = Interval
-        fields = ["id", "external_id", "name", "study", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "study", "created_at", "updated_at"]
 
 
 class VariableSchemaIn(ModelSchema):
@@ -84,13 +84,13 @@ class VariableSchemaIn(ModelSchema):
 
     class Meta:
         model = Variable
-        fields = ["external_id", "name"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id", "name"]
 
 
 class VariableSchemaOut(ModelSchema):
     class Meta:
         model = Variable
-        fields = ["id", "external_id", "name", "form", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "form", "created_at", "updated_at"]
 
 
 class VisitSchemaIn(ModelSchema):
@@ -99,13 +99,13 @@ class VisitSchemaIn(ModelSchema):
 
     class Meta:
         model = Visit
-        fields = ["external_id"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id"]
 
 
 class VisitSchemaOut(ModelSchema):
     class Meta:
         model = Visit
-        fields = ["id", "external_id", "subject", "interval", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "subject", "interval", "created_at", "updated_at"]
 
 
 class RecordSchemaIn(ModelSchema):
@@ -114,13 +114,13 @@ class RecordSchemaIn(ModelSchema):
 
     class Meta:
         model = Record
-        fields = ["external_id", "value"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id", "value"]
 
 
 class RecordSchemaOut(ModelSchema):
     class Meta:
         model = Record
-        fields = ["id", "external_id", "value", "visit", "variable", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "value", "visit", "variable", "created_at", "updated_at"]
 
 
 class CodingSchemaIn(ModelSchema):
@@ -128,13 +128,13 @@ class CodingSchemaIn(ModelSchema):
 
     class Meta:
         model = Coding
-        fields = ["external_id", "code"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id", "code"]
 
 
 class CodingSchemaOut(ModelSchema):
     class Meta:
         model = Coding
-        fields = ["id", "external_id", "code", "record", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "code", "record", "created_at", "updated_at"]
 
 
 class QuerySchemaIn(ModelSchema):
@@ -142,13 +142,13 @@ class QuerySchemaIn(ModelSchema):
 
     class Meta:
         model = Query
-        fields = ["external_id", "text"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id", "text"]
 
 
 class QuerySchemaOut(ModelSchema):
     class Meta:
         model = Query
-        fields = ["id", "external_id", "text", "record", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "text", "record", "created_at", "updated_at"]
 
 
 class RecordRevisionSchemaIn(ModelSchema):
@@ -156,13 +156,13 @@ class RecordRevisionSchemaIn(ModelSchema):
 
     class Meta:
         model = RecordRevision
-        fields = ["external_id", "value"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id", "value"]
 
 
 class RecordRevisionSchemaOut(ModelSchema):
     class Meta:
         model = RecordRevision
-        fields = ["id", "external_id", "value", "record", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "value", "record", "created_at", "updated_at"]
 
 
 # --- Endpoints ---
@@ -171,7 +171,7 @@ class RecordRevisionSchemaOut(ModelSchema):
 # L1: Study
 @router.post("/studies", response=StudySchemaOut)
 def sync_study(request, payload: StudySchemaIn):
-    study, _ = Study.objects.update_or_create(external_id=payload.external_id, defaults={"name": payload.name})
+    study, _ = Study.objects.update_or_create(external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "name": payload.name})
     return study
 
 
@@ -185,7 +185,7 @@ def list_studies(request):
 def sync_site(request, payload: SiteSchemaIn):
     study = get_object_or_404(Study, external_id=payload.study_ext_id)
     site, _ = Site.objects.update_or_create(
-        external_id=payload.external_id, defaults={"study": study, "name": payload.name}
+        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "study": study, "name": payload.name}
     )
     return site
 
@@ -200,7 +200,7 @@ def list_sites(request):
 def sync_subject(request, payload: SubjectSchemaIn):
     site = get_object_or_404(Site, external_id=payload.site_ext_id)
     subject, _ = Subject.objects.update_or_create(
-        external_id=payload.external_id, defaults={"site": site, "name": payload.name}
+        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "site": site, "name": payload.name}
     )
     return subject
 
@@ -215,7 +215,7 @@ def list_subjects(request):
 def sync_form(request, payload: FormSchemaIn):
     study = get_object_or_404(Study, external_id=payload.study_ext_id)
     form, _ = Form.objects.update_or_create(
-        external_id=payload.external_id, defaults={"study": study, "name": payload.name}
+        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "study": study, "name": payload.name}
     )
     return form
 
@@ -230,7 +230,7 @@ def list_forms(request):
 def sync_interval(request, payload: IntervalSchemaIn):
     study = get_object_or_404(Study, external_id=payload.study_ext_id)
     interval, _ = Interval.objects.update_or_create(
-        external_id=payload.external_id, defaults={"study": study, "name": payload.name}
+        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "study": study, "name": payload.name}
     )
     return interval
 
@@ -245,7 +245,7 @@ def list_intervals(request):
 def sync_variable(request, payload: VariableSchemaIn):
     form = get_object_or_404(Form, external_id=payload.form_ext_id)
     variable, _ = Variable.objects.update_or_create(
-        external_id=payload.external_id, defaults={"form": form, "name": payload.name}
+        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "form": form, "name": payload.name}
     )
     return variable
 
@@ -261,7 +261,7 @@ def sync_visit(request, payload: VisitSchemaIn):
     subject = get_object_or_404(Subject, external_id=payload.subject_ext_id)
     interval = get_object_or_404(Interval, external_id=payload.interval_ext_id)
     visit, _ = Visit.objects.update_or_create(
-        external_id=payload.external_id, defaults={"subject": subject, "interval": interval}
+        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "subject": subject, "interval": interval}
     )
     return visit
 
@@ -277,7 +277,7 @@ def sync_record(request, payload: RecordSchemaIn):
     visit = get_object_or_404(Visit, external_id=payload.visit_ext_id)
     variable = get_object_or_404(Variable, external_id=payload.variable_ext_id)
     record, _ = Record.objects.update_or_create(
-        external_id=payload.external_id, defaults={"visit": visit, "variable": variable, "value": payload.value}
+        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "visit": visit, "variable": variable, "value": payload.value}
     )
     return record
 
@@ -292,7 +292,7 @@ def list_records(request):
 def sync_coding(request, payload: CodingSchemaIn):
     record = get_object_or_404(Record, external_id=payload.record_ext_id)
     coding, _ = Coding.objects.update_or_create(
-        external_id=payload.external_id, defaults={"record": record, "code": payload.code}
+        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "record": record, "code": payload.code}
     )
     return coding
 
@@ -307,7 +307,7 @@ def list_codings(request):
 def sync_query(request, payload: QuerySchemaIn):
     record = get_object_or_404(Record, external_id=payload.record_ext_id)
     query, _ = Query.objects.update_or_create(
-        external_id=payload.external_id, defaults={"record": record, "text": payload.text}
+        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "record": record, "text": payload.text}
     )
     return query
 
@@ -322,7 +322,7 @@ def list_queries(request):
 def sync_revision(request, payload: RecordRevisionSchemaIn):
     record = get_object_or_404(Record, external_id=payload.record_ext_id)
     revision, _ = RecordRevision.objects.update_or_create(
-        external_id=payload.external_id, defaults={"record": record, "value": payload.value}
+        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "record": record, "value": payload.value}
     )
     return revision
 

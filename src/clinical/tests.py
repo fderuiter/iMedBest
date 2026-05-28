@@ -138,6 +138,7 @@ def test_longitudinal_reconstruction(client):
     assert rows[1]["VSSEQ"] == "2"
 
 @pytest.mark.django_db
+@override_settings(CLINICAL_API_KEY="test_api_key_123", CELERY_TASK_ALWAYS_EAGER=True)
 def test_sync_job_endpoint(client):
     from clinical.models import SyncJob
     
@@ -159,7 +160,7 @@ def test_sync_job_endpoint(client):
     resp = client.post(
         "/api/clinical/sync-jobs",
         data=payload,
-        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token"
+        content_type="application/json", HTTP_X_API_KEY="test_api_key_123"
     )
     assert resp.status_code == 202
     data = resp.json()

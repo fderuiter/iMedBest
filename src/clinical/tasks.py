@@ -1,10 +1,15 @@
 import logging
 
 from celery import shared_task
+from django.db import transaction
 
 from .models import (
+    Form,
+    Record,
     SyncJob,
     SyncTask,
+    Variable,
+    Visit,
 )
 
 logger = logging.getLogger(__name__)
@@ -233,5 +238,110 @@ def check_level_completion(job_id, level, user_id):
         next_level = next_tasks.order_by('hierarchy_level').first().hierarchy_level
         process_level.delay(job_id, next_level, user_id)
     else:
+        try:
+            prune_log = run_pruning(job)
+            if prune_log:
+                summary = "Pruning Summary:\n" + "\n".join(prune_log)
+                if job.error_message:
+                    job.error_message += "\n\n" + summary
+                else:
+                    job.error_message = summary
+                job.save(update_fields=['error_message'])
+        except Exception as e:
+            logger.error(f"Pruning failed for job {job.id}: {e}")
+
         job.status = 'COMPLETED'
         job.save(update_fields=['status'])
+
+
+
+
+def get_sync_scopes(job):
+    scopes = {
+        'Form': set(),
+        'Variable': set(),
+        'Visit': set(),
+    }
+
+    synced_entities = {
+        'Study': set(),
+        'Site': set(),
+        'Subject': set(),
+        'Form': set(),
+        'Interval': set(),
+        'Variable': set(),
+        'Visit': set(),
+    }
+
+    for task in SyncTask.objects.filter(job=job):
+        etype = task.entity_type
+        payload = task.payload
+        ext_id = payload.get('external_id')
+        if ext_id:
+            if etype in synced_entities:
+                synced_entities[etype].add(ext_id)
+
+            if etype == 'Study':
+                scopes['Form'].add(ext_id)
+            elif etype == 'Form':
+                scopes['Variable'].add(ext_id)
+                if 'study_ext_id' in payload:
+                    scopes['Form'].add(payload['study_ext_id'])
+            elif etype == 'Subject':
+                scopes['Visit'].add(ext_id)
+            elif etype == 'Variable' and 'form_ext_id' in payload:
+                scopes['Variable'].add(payload['form_ext_id'])
+            elif etype == 'Visit' and 'subject_ext_id' in payload:
+                scopes['Visit'].add(payload['subject_ext_id'])
+
+    return scopes, synced_entities
+
+def has_clinical_dependencies(entity_type, entity):
+    if entity_type == 'Variable':
+        return Record.objects.filter(variable=entity).exists()
+    if entity_type == 'Visit':
+        return Record.objects.filter(visit=entity).exists()
+    if entity_type == 'Form':
+        return Record.objects.filter(variable__form=entity).exists()
+    return False
+
+@transaction.atomic
+def run_pruning(job):
+    scopes, synced_entities = get_sync_scopes(job)
+    prune_log = []
+
+    variables_to_prune = Variable.objects.filter(
+        form__external_id__in=scopes['Variable']
+    ).exclude(external_id__in=synced_entities['Variable'])
+
+    for var in variables_to_prune:
+        if has_clinical_dependencies('Variable', var):
+            prune_log.append(f"PRESERVED Variable {var.external_id}: Has clinical dependencies")
+        else:
+            prune_log.append(f"DELETED Variable {var.external_id}")
+            var.delete()
+
+    visits_to_prune = Visit.objects.filter(
+        subject__external_id__in=scopes['Visit']
+    ).exclude(external_id__in=synced_entities['Visit'])
+
+    for visit in visits_to_prune:
+        if has_clinical_dependencies('Visit', visit):
+            prune_log.append(f"PRESERVED Visit {visit.external_id}: Has clinical dependencies")
+        else:
+            prune_log.append(f"DELETED Visit {visit.external_id}")
+            visit.delete()
+
+    forms_to_prune = Form.objects.filter(
+        study__external_id__in=scopes['Form']
+    ).exclude(external_id__in=synced_entities['Form'])
+
+    for form in forms_to_prune:
+        if has_clinical_dependencies('Form', form):
+            prune_log.append(f"PRESERVED Form {form.external_id}: Has clinical dependencies")
+        else:
+            prune_log.append(f"DELETED Form {form.external_id}")
+            form.delete()
+
+    return prune_log
+

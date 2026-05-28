@@ -10,15 +10,15 @@ class ClinicalEntity(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
-        'users.User', 
-        on_delete=models.PROTECT, 
+        'users.User',
+        on_delete=models.PROTECT,
         related_name="%(class)s_created",
         null=True,
         blank=True
     )
     updated_by = models.ForeignKey(
-        'users.User', 
-        on_delete=models.PROTECT, 
+        'users.User',
+        on_delete=models.PROTECT,
         related_name="%(class)s_updated",
         null=True,
         blank=True

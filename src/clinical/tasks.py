@@ -9,7 +9,7 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
 def process_sync_task(self, task_id, user_id):
     task = SyncTask.objects.get(id=task_id)
     try:
@@ -39,19 +39,21 @@ def process_sync_task(self, task_id, user_id):
             job.save(update_fields=['status'])
 
     except Exception as exc:
-        task.status = 'FAILED'
         task.error_message = str(exc)
         task.retry_count += 1
-        task.save(update_fields=['status', 'error_message', 'retry_count'])
-        job = task.job
-        job.status = 'FAILED'
-        job.save(update_fields=['status'])
         try:
+            task.status = 'PENDING'
+            task.save(update_fields=['status', 'error_message', 'retry_count'])
             self.retry(exc=exc, countdown=2 ** task.retry_count) # Exponential backoff
         except self.MaxRetriesExceededError:
+            task.status = 'FAILED'
+            task.save(update_fields=['status'])
             logger.error(f"Task {task.id} failed after max retries")
+            job = task.job
+            job.status = 'FAILED'
+            job.save(update_fields=['status'])
 
-@shared_task
+@shared_task(acks_late=True, reject_on_worker_lost=True)
 def orchestrate_sync_job(job_id, user_id):
     job = SyncJob.objects.get(id=job_id)
     job.status = 'PROCESSING'
@@ -89,7 +91,7 @@ def orchestrate_sync_job(job_id, user_id):
         job.error_message = str(e)
         job.save(update_fields=['status', 'error_message'])
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
 def process_level(self, job_id, level, user_id):
     job = SyncJob.objects.get(id=job_id)
     tasks = SyncTask.objects.filter(job=job, hierarchy_level=level, status='PENDING')
@@ -121,7 +123,7 @@ def process_level(self, job_id, level, user_id):
     # Let's queue a monitoring task that checks if level is done.
     check_level_completion.apply_async((job_id, level, user_id), countdown=2)
 
-@shared_task(bind=True, max_retries=5)
+@shared_task(bind=True, max_retries=5, acks_late=True, reject_on_worker_lost=True)
 def process_single_task(self, task_id, user_id):
     task = SyncTask.objects.get(id=task_id)
     if task.status != 'PENDING':
@@ -196,38 +198,31 @@ def process_single_task(self, task_id, user_id):
         task.save(update_fields=['status'])
 
     except Exception as exc:
-        task.status = 'FAILED'
         task.error_message = str(exc)
         task.retry_count += 1
-        task.save(update_fields=['status', 'error_message', 'retry_count'])
         try:
+            # Revert to PENDING so the retry can process it and level completion waits
+            task.status = 'PENDING'
+            task.save(update_fields=['status', 'error_message', 'retry_count'])
             self.retry(exc=exc, countdown=2 ** task.retry_count) # Exponential backoff
         except self.MaxRetriesExceededError:
+            task.status = 'FAILED'
+            task.save(update_fields=['status'])
             logger.error(f"Task {task.id} failed after max retries")
-            job = task.job
-            job.status = 'FAILED'
-            job.error_message = f"Task {task.id} failed"
-            job.save(update_fields=['status', 'error_message'])
 
-@shared_task
+@shared_task(acks_late=True, reject_on_worker_lost=True)
 def check_level_completion(job_id, level, user_id):
     job = SyncJob.objects.get(id=job_id)
     if job.status == 'FAILED':
         return # Stop processing
 
     tasks = SyncTask.objects.filter(job=job, hierarchy_level=level)
-    if tasks.filter(status='FAILED').exists():
-        job.status = 'FAILED'
-        job.error_message = f"One or more tasks failed at level {level}"
-        job.save(update_fields=['status', 'error_message'])
-        return
-
-    if tasks.exclude(status='COMPLETED').exists():
+    if tasks.exclude(status__in=['COMPLETED', 'FAILED']).exists():
         # Still processing, check again later
         check_level_completion.apply_async((job_id, level, user_id), countdown=2)
         return
 
-    # All completed, proceed to next level
+    # All processing finished for this level (completed or failed), proceed to next level
     next_tasks = SyncTask.objects.filter(job=job, hierarchy_level__gt=level)
     if next_tasks.exists():
         next_level = next_tasks.order_by('hierarchy_level').first().hierarchy_level

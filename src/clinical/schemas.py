@@ -1,14 +1,16 @@
-from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class EntityPayload(BaseModel):
     entity_type: str
     hierarchy_level: int
-    payload: Dict[str, Any]
+    payload: dict[str, Any]
 
 class SyncJobRequest(BaseModel):
-    entities: List[EntityPayload]
+    entities: list[EntityPayload]
 
 class SyncJobResponse(BaseModel):
     job_id: UUID

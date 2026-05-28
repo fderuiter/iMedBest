@@ -6,7 +6,7 @@ Welcome to the **iMedBest** development team! To maintain high engineering veloc
 
 ## 🛠️ 1. Code Quality & Formatting Guardrails
 
-We enforce strict automated formatting and lint checks using **Ruff** (written in Rust, runs in microseconds). 
+We enforce strict automated formatting and lint checks using **Ruff** (written in Rust, runs in microseconds).
 
 ### Configuration Guidelines
 * **Line Length Limit:** 120 characters maximum.
@@ -102,4 +102,3 @@ Level 2: Subjects -> Forms -> Intervals -> Users (Core Clinical Structures)
 Level 3: Variables -> Visits (Operational Properties)
 Level 4: Records -> (Codings, Queries, RecordRevisions) -> Jobs (Data Capture Layer)
 ```
-

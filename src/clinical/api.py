@@ -27,6 +27,7 @@ from .models import (
     Query,
     Record,
     RecordRevision,
+    ReportJob,
     Site,
     Study,
     Subject,
@@ -528,12 +529,48 @@ def list_revisions(request):
 
 
 
-@router.get("/export/cdisc")
-def export_cdisc_package(request):
+class ReportJobSchemaOut(ModelSchema):
+    class Meta:
+        model = ReportJob
+        fields = ["id", "status", "report_type", "progress", "error_message", "created_at", "updated_at"]
+
+@router.post("/reports/cdisc", response={202: ReportJobSchemaOut})
+def request_cdisc_report(request):
     # Check data-extraction privileges
     roles = getattr(request, 'user_roles', [])
     has_privilege = any(r in str(roles).lower() for r in ['export', 'extractor', 'cdisc'])
     if not (has_privilege or request.user.is_staff or request.user.is_superuser):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Missing data-extraction privileges")
-    return generate_cdisc_export(request)
+
+    job = ReportJob.objects.create(
+        user=request.user,
+        report_type='cdisc_export',
+        status='PENDING'
+    )
+    return 202, job
+
+@router.get("/reports", response=list[ReportJobSchemaOut])
+def list_reports(request):
+    return ReportJob.objects.filter(user=request.user).order_by('-created_at')
+
+@router.get("/reports/{job_id}", response=ReportJobSchemaOut)
+def get_report_status(request, job_id: str):
+    return get_object_or_404(ReportJob, id=job_id, user=request.user)
+
+@router.get("/reports/{job_id}/download")
+def download_report(request, job_id: str):
+    job = get_object_or_404(ReportJob, id=job_id, user=request.user, status='COMPLETED')
+    if not job.file:
+        from django.http import Http404
+        raise Http404("File not found")
+        
+    from django.http import FileResponse
+    response = FileResponse(job.file.open('rb'), content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="cdisc_export_{job.id}.zip"'
+    return response
+
+# Keeping the old endpoint to support existing clients? Actually, we modify it to be async to fix the timeout issue.
+@router.get("/export/cdisc", response={202: ReportJobSchemaOut})
+def export_cdisc_package(request):
+    return request_cdisc_report(request)

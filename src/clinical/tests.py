@@ -119,13 +119,26 @@ def test_longitudinal_reconstruction(client):
     
     # Check export order (source sequence priorities)
     resp = client.get("/api/clinical/export/cdisc", HTTP_X_API_KEY="test_api_key_123")
+    assert resp.status_code == 202
+    job_id = resp.json()["id"]
+
+    # Manually run the background task to completion for the test
+    from clinical.models import ReportJob
+    from clinical.export import _generate_cdisc_export_file
+    job = ReportJob.objects.get(id=job_id)
+    _generate_cdisc_export_file(job)
+    job.status = 'COMPLETED'
+    job.save()
+
+    # Download the report
+    resp = client.get(f"/api/clinical/reports/{job_id}/download", HTTP_X_API_KEY="test_api_key_123")
     assert resp.status_code == 200
     
     import zipfile
     import io
     import csv
     
-    z = zipfile.ZipFile(io.BytesIO(resp.content))
+    z = zipfile.ZipFile(io.BytesIO(resp.getvalue()))
     vs_csv = z.read("VS.csv").decode('utf-8').splitlines()
     reader = csv.DictReader(vs_csv)
     rows = list(reader)
@@ -138,6 +151,7 @@ def test_longitudinal_reconstruction(client):
     assert rows[1]["VSSEQ"] == "2"
 
 @pytest.mark.django_db
+@override_settings(CLINICAL_API_KEY="test_api_key_123")
 def test_sync_job_endpoint(client):
     from clinical.models import SyncJob
     
@@ -159,7 +173,7 @@ def test_sync_job_endpoint(client):
     resp = client.post(
         "/api/clinical/sync-jobs",
         data=payload,
-        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token"
+        content_type="application/json", HTTP_X_API_KEY="test_api_key_123"
     )
     assert resp.status_code == 202
     data = resp.json()

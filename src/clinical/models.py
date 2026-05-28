@@ -205,3 +205,23 @@ class SyncTask(models.Model):
     def __str__(self):
         return f"Task {self.id} for {self.entity_type} - {self.status}"
 
+class ReportJob(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey('users.User', on_delete=models.CASCADE)
+    status = models.CharField(max_length=50, default='PENDING', choices=[
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed')
+    ])
+    report_type = models.CharField(max_length=100)
+    parameters = models.JSONField(default=dict, blank=True)
+    file = models.FileField(upload_to='exports/', blank=True, null=True)
+    error_message = models.TextField(blank=True, null=True)
+    progress = models.IntegerField(default=0)  # to store progress percentage if needed
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Report {self.report_type} ({self.status})"
+

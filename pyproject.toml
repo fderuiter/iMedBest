@@ -63,6 +63,7 @@ ignore = [
 [tool.ruff.lint.extend-per-file-ignores]
 # Do not enforce strict linter rules on auto-generated Django migrations
 "src/**/migrations/*.py" = ["E501", "N806", "N999", "RUF012"]
+"src/manage.py" = ["PLC0415"]
 
 [tool.ruff.format]
 quote-style = "double"

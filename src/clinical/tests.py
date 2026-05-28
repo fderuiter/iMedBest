@@ -136,3 +136,41 @@ def test_longitudinal_reconstruction(client):
     assert rows[0]["VSSEQ"] == "1"
     assert rows[1]["VSORRES"] == "90"
     assert rows[1]["VSSEQ"] == "2"
+
+@pytest.mark.django_db
+def test_sync_job_endpoint(client):
+    from clinical.models import SyncJob
+    
+    payload = {
+        "entities": [
+            {
+                "entity_type": "Study",
+                "hierarchy_level": 1,
+                "payload": {"external_id": "study-async", "name": "Async Study"}
+            },
+            {
+                "entity_type": "Site",
+                "hierarchy_level": 1,
+                "payload": {"external_id": "site-async", "study_ext_id": "study-async", "name": "Async Site"}
+            }
+        ]
+    }
+    
+    resp = client.post(
+        "/api/clinical/sync-jobs",
+        data=payload,
+        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token"
+    )
+    assert resp.status_code == 202
+    data = resp.json()
+    assert "job_id" in data
+    
+    job_id = data["job_id"]
+    job = SyncJob.objects.get(id=job_id)
+    if job.status == "FAILED":
+        print("JOB FAILED WITH ERROR:", job.error_message)
+        for task in job.tasks.all():
+            if task.status == "FAILED":
+                print(f"TASK {task.id} FAILED WITH ERROR:", task.error_message)
+    assert job.status == "PENDING" or job.status == "COMPLETED"
+    assert job.tasks.count() == 2

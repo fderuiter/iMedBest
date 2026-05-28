@@ -167,3 +167,41 @@ def create_record_revision(sender, instance, created, **kwargs):
         created_by=instance.updated_by,
         updated_by=instance.updated_by
     )
+
+class SyncJob(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    status = models.CharField(max_length=50, default='PENDING', choices=[
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed')
+    ])
+    user = models.ForeignKey('users.User', on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    error_message = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Job {self.id} - {self.status}"
+
+class SyncTask(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.ForeignKey(SyncJob, on_delete=models.CASCADE, related_name='tasks')
+    hierarchy_level = models.IntegerField() # 1=Study/Site, 2=Subject/Form/Interval, 3=Variable/Visit, 4=Record/etc
+    entity_type = models.CharField(max_length=50) # e.g. 'Study', 'Subject'
+    payload = models.JSONField()
+    status = models.CharField(max_length=50, default='PENDING', choices=[
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed')
+    ])
+    parent_task = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='child_tasks')
+    error_message = models.TextField(blank=True, null=True)
+    retry_count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Task {self.id} for {self.entity_type} - {self.status}"
+

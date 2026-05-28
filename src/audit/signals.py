@@ -6,6 +6,7 @@ from django.forms.models import model_to_dict
 
 from .middleware import get_current_request
 from .models import AuditLog
+from .tasks import create_audit_log_task
 
 EXCLUDED_MODELS = ['AuditLog', 'Session', 'LogEntry', 'ContentType', 'Permission', 'Group', 'Revision', 'RecordRevision', 'Migration']
 
@@ -28,18 +29,15 @@ def create_audit_log(action, instance, changes=None):
     ip_address = get_client_ip(request) if request else None
     user_agent = request.META.get('HTTP_USER_AGENT') if request else None
 
-    try:
-        AuditLog.objects.create(
-            action=action,
-            model_name=model_name,
-            object_id=str(instance.pk),
-            changes=changes,
-            user=user,
-            ip_address=ip_address,
-            user_agent=user_agent
-        )
-    except OperationalError:
-        pass
+    create_audit_log_task.delay(
+        action=action,
+        model_name=model_name,
+        object_id=str(instance.pk),
+        changes=changes,
+        user_id=user.pk if user else None,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
 
 def safe_model_to_dict(instance):
     d = model_to_dict(instance)
@@ -92,26 +90,26 @@ def log_delete(sender, instance, **kwargs):
 def log_login(sender, request, user, **kwargs):
     ip_address = get_client_ip(request) if request else None
     user_agent = request.META.get('HTTP_USER_AGENT') if request else None
-    try:
-        AuditLog.objects.create(
-            action='LOGIN',
-            user=user,
-            ip_address=ip_address,
-            user_agent=user_agent
-        )
-    except OperationalError:
-        pass
+    create_audit_log_task.delay(
+        action='LOGIN',
+        model_name='',
+        object_id='',
+        changes=None,
+        user_id=user.pk if user else None,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
 
 @receiver(user_logged_out)
 def log_logout(sender, request, user, **kwargs):
     ip_address = get_client_ip(request) if request else None
     user_agent = request.META.get('HTTP_USER_AGENT') if request else None
-    try:
-        AuditLog.objects.create(
-            action='LOGOUT',
-            user=user,
-            ip_address=ip_address,
-            user_agent=user_agent
-        )
-    except OperationalError:
-        pass
+    create_audit_log_task.delay(
+        action='LOGOUT',
+        model_name='',
+        object_id='',
+        changes=None,
+        user_id=user.pk if user else None,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )

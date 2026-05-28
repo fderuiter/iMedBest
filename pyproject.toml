@@ -14,6 +14,9 @@ dependencies = [
     "cryptography>=41.0.0",
     "pyjwt>=2.8.0",
     "requests>=2.31.0",
+    "celery>=5.6.3",
+    "redis>=8.0.0",
+    "django-celery-results>=2.6.0",
 ]
 
 [dependency-groups]
@@ -74,3 +77,5 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
+[tool.pytest.ini_options.env]
+CELERY_TASK_ALWAYS_EAGER = "True"

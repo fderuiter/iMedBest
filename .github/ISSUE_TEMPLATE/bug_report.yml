@@ -1,0 +1,102 @@
+name: "🐛 Bug Report Form"
+description: "File a highly structured bug report with interactive inputs"
+title: "[Bug] <Location>: <Summary of Failure>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping us make **iMedBest** better! Please complete the form below.
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: "⚠️ Severity Level"
+      description: "How severely does this bug affect clinical operations?"
+      options:
+        - "P1 - Critical (Production Down / Data Corruption Risk)"
+        - "P2 - Major (Core flow broken, e.g. sync fails)"
+        - "P3 - Minor (UI alignment or non-critical issue)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "💻 Active Environment"
+      description: "Which environment was this bug observed in?"
+      options:
+        - "Local Development (Docker Compose)"
+        - "Staging Environment"
+        - "Production Cluster"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "📌 Context & User Impact ('Why')"
+      description: "Explain the clinical or operational impact of this bug. Why is fixing it important?"
+      placeholder: "e.g., Clinical staff are unable to complete subject enrollment if their last name contains a hyphen, stalling shift handovers."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: "📋 Numbered Reproduction Steps"
+      description: "Provide a detailed, step-by-step list to reproduce the issue from a clean slate."
+      placeholder: |
+        1. Navigate to the local URL (http://localhost:8000/oauth2/login/).
+        2. Enter corporate credentials and click submit.
+        3. Navigate to the profile tab and modify the last name to contain a special character.
+        4. Click the 'Save Changes' button.
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: "🔄 Expected vs. Actual Behavior"
+      description: "Clearly contrast the desired outcome against the failure in execution."
+      placeholder: |
+        - **Expected Behavior:** The form submits successfully, returns a 200 OK status, updates the database, and displays a success toast.
+        - **Actual Behavior:** The UI freezes, the browser console shows an unhandled JSON validation exception, and the backend returns a 422 error.
+    validations:
+      required: true
+
+  - type: input
+    id: commit-hash
+    attributes:
+      label: "🏷️ Git Commit Hash / Version"
+      description: "Provide the specific version tag or commit hash (e.g. `8a3f2b1`)."
+      placeholder: "e.g., sha-8a3f2b1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs-visuals
+    attributes:
+      label: "📊 Logs, Stack Traces, and Visuals"
+      description: "Format stack traces using standard code blocks, and attach any Loom recordings or screenshots."
+      placeholder: |
+        ```typescript
+        // Paste relevant log/error traces here
+        TypeError: Cannot read properties of undefined (reading 'map')
+            at ProfileComponents.tsx:42:18
+        ```
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: pre-requisites
+    attributes:
+      label: "🛡️ Safe-Submission Verification"
+      description: "Confirm you have followed standard diagnostic steps before submitting."
+      options:
+        - label: "I have searched the active issue tracker and confirmed this is not a duplicate."
+          required: true
+        - label: "I have verified this failure occurs on the latest `main`/`develop` branch."
+          required: true
+        - label: "I have sanitized all patient identifiers and proprietary data from the logs."
+          required: true

@@ -1,0 +1,64 @@
+name: "✨ Feature Request Form"
+description: "Propose a new feature, endpoint, or optimization for iMedBest"
+title: "[Feature] <Scope>: <Summary of Feature>"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please use this form to propose new features or operational capabilities.
+
+  - type: dropdown
+    id: epic-scope
+    attributes:
+      label: "🗺️ Target Epic Scope"
+      description: "Which architectural epic does this new feature belong to?"
+      options:
+        - "Epic 2 - Core Data Sync Engine"
+        - "Epic 3 - User Auth & Microsoft Entra ID"
+        - "Epic 4 - REST API & Django Ninja Controllers"
+        - "Epic 5 - Background Tasks & Celery/Redis Processing"
+        - "Epic 6 - Frontend Integration & Asset Pipeline"
+        - "Epic 7 - DevOps, CI/CD, & Observability"
+    validations:
+      required: true
+
+  - type: textarea
+    id: user-story
+    attributes:
+      label: "📌 User Story & Value ('Why')"
+      description: "Who needs this feature, what does it accomplish, and why is it valuable?"
+      placeholder: "As a Clinical Auditor, I want to view live sync queue depths so that I can monitor pipeline health."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: "⚙️ Proposed Technical Solution"
+      description: "Summarize the technical approach and components involved."
+      placeholder: "Expose a new /health/queue endpoint on the Django Ninja routing layer fetching Celery broker status."
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: "🎯 Technical Acceptance Criteria"
+      description: "List the clear, measurable checkpoints required to mark this task complete."
+      placeholder: |
+        - [ ] API endpoint returns status within 50ms.
+        - [ ] Queue diagnostics are structured and typed via Pydantic.
+        - [ ] Authentication requires active OIDC corporate sessions.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: value-check
+    attributes:
+      label: "🛡️ Feature Alignment Check"
+      options:
+        - label: "This feature preserves loose coupling between local caches and the upstream iMednet platform."
+          required: true
+        - label: "I have confirmed this capability is not already supported by the current architecture."
+          required: true

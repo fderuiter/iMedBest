@@ -1,0 +1,86 @@
+name: "🛠️ Technical Task / Chore Form"
+description: "Specify a code chore, database maintenance task, or backend refactoring"
+title: "[Chore] <Epic/Component>: <Summary of Task>"
+labels: ["chore"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Specify a technical task or backend structural chore with complete defensive engineering criteria.
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: "⚡ Priority Level"
+      description: "Assign the operational priority tier for this engineering task."
+      options:
+        - "High - Blocks immediate releases"
+        - "Medium - Required for the current sprint"
+        - "Low - Tech debt / Backlog item"
+    validations:
+      required: true
+
+  - type: textarea
+    id: relationships
+    attributes:
+      label: "🔗 Relational Dependency Mapping"
+      description: "Declare the parent epic, blocking, and blocked-by issues."
+      placeholder: |
+        * **Parent/Epic:** #30
+        * **Blocked By:** #33
+        * **Blocking:** #35
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "📌 Context & Architectural 'Why'"
+      description: "Provide the rationale, background context, and system advantages."
+      placeholder: "Refactoring the connection adapter eliminates redundant connection pooling and handles dropouts."
+    validations:
+      required: true
+
+  - type: textarea
+    id: specifications
+    attributes:
+      label: "⚙️ Technical Specifications"
+      description: "Provide the detailed technical requirements and acceptance criteria."
+      placeholder: "Create a custom base backend middleware intercepting..."
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: defensive-dimensions
+    attributes:
+      label: "🛡️ Bounded Defensive Engineering Dimensions"
+      description: "Confirm which safety parameters are planned and verified inside this task."
+      options:
+        - label: "Idempotency: Operations are fully repeatable and bound to unique keys (e.g. `imednet_id`)."
+          required: true
+        - label: "Partial-Failure Resilience: Custom try/except boundaries and retries prevent system crashes."
+          required: true
+        - label: "N+1 Protections: Query optimizations (prefetch/eager loads) prevent performance bottlenecks."
+          required: true
+
+  - type: textarea
+    id: plan
+    attributes:
+      label: "🚀 Step-by-Step Implementation Plan"
+      description: "Define the chronological execution steps."
+      placeholder: |
+        1. Setup variables.
+        2. Create migrations.
+        3. Run verification.
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: "📊 Verification & Testing Criteria"
+      description: "Provide the steps and commands required to test and verify completion."
+      placeholder: |
+        - [ ] Verify test suite runs successfully with zero warnings.
+    validations:
+      required: true

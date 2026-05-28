@@ -9,6 +9,20 @@ class ClinicalEntity(models.Model):
     external_id = models.CharField(max_length=255, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        'users.User', 
+        on_delete=models.PROTECT, 
+        related_name="%(class)s_created",
+        null=True,
+        blank=True
+    )
+    updated_by = models.ForeignKey(
+        'users.User', 
+        on_delete=models.PROTECT, 
+        related_name="%(class)s_updated",
+        null=True,
+        blank=True
+    )
 
     # Longitudinal Reconstruction Metadata
     clinical_timestamp = models.DateTimeField(null=True, blank=True)
@@ -19,6 +33,11 @@ class ClinicalEntity(models.Model):
         abstract = True
 
     def save(self, *args, **kwargs):
+        if self.pk is not None:
+            orig = self.__class__.objects.get(pk=self.pk)
+            if orig.created_by_id and self.created_by_id != orig.created_by_id:
+                self.created_by_id = orig.created_by_id
+
         if hasattr(self, 'get_subject') and self.clinical_timestamp:
             try:
                 subject = self.get_subject()
@@ -144,5 +163,7 @@ def create_record_revision(sender, instance, created, **kwargs):
         value=instance.value,
         clinical_timestamp=instance.clinical_timestamp,
         source_sequence=instance.source_sequence,
-        offset_days=instance.offset_days
+        offset_days=instance.offset_days,
+        created_by=instance.updated_by,
+        updated_by=instance.updated_by
     )

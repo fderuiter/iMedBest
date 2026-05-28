@@ -111,7 +111,7 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.CreateModel(
-            name="Revision",
+            name="RecordRevision",
             fields=[
                 (
                     "id",

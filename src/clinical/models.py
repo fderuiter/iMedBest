@@ -168,6 +168,18 @@ def create_record_revision(sender, instance, created, **kwargs):
         updated_by=instance.updated_by
     )
 
+class BufferedOrphan(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    entity_type = models.CharField(max_length=50)
+    missing_parent_id = models.CharField(max_length=255)
+    payload = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    user = models.ForeignKey('users.User', on_delete=models.CASCADE, null=True, blank=True)
+
+    def __str__(self):
+        return f"BufferedOrphan {self.entity_type} waiting for {self.missing_parent_id}"
+
 class SyncJob(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     status = models.CharField(max_length=50, default='PENDING', choices=[

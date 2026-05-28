@@ -1,5 +1,11 @@
 from django.contrib import admin
-from .models import SyncJob, SyncTask
+from .models import SyncJob, SyncTask, ExportJob
+
+@admin.register(ExportJob)
+class ExportJobAdmin(admin.ModelAdmin):
+    list_display = ('id', 'status', 'user', 'created_at', 'updated_at')
+    list_filter = ('status', 'created_at')
+    search_fields = ('id', 'user__username', 'error_message')
 
 @admin.register(SyncJob)
 class SyncJobAdmin(admin.ModelAdmin):

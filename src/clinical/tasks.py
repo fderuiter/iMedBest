@@ -1,13 +1,51 @@
 import logging
+import os
 
 from celery import shared_task
 
+from .export import create_cdisc_archive_file
 from .models import (
+    ExportJob,
     SyncJob,
     SyncTask,
 )
 
 logger = logging.getLogger(__name__)
+
+@shared_task(bind=True, max_retries=3)
+def process_export_job(self, job_id):
+    zip_path = None
+    try:
+        job = ExportJob.objects.get(id=job_id)
+        job.status = 'PROCESSING'
+        job.save(update_fields=['status'])
+
+        # Generate data
+        zip_path = create_cdisc_archive_file()
+
+        # Save to file field
+        from django.core.files import File
+        file_name = f"cdisc_export_{job_id}.zip"
+
+        with open(zip_path, 'rb') as f:
+            job.file.save(file_name, File(f), save=False)
+
+        job.status = 'COMPLETED'
+        job.save(update_fields=['status', 'file'])
+
+    except Exception as exc:
+        job = ExportJob.objects.get(id=job_id)
+        job.status = 'FAILED'
+        job.error_message = str(exc)
+        job.save(update_fields=['status', 'error_message'])
+        logger.error(f"Export Job {job_id} failed: {exc}")
+        # Not retrying automatically for export, user has retry button.
+    finally:
+        if zip_path and os.path.exists(zip_path):
+            try:
+                os.remove(zip_path)
+            except OSError:
+                pass
 
 @shared_task(bind=True, max_retries=3)
 def process_sync_task(self, task_id, user_id):

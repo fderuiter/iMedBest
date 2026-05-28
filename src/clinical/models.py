@@ -10,15 +10,15 @@ class ClinicalEntity(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
-        'users.User', 
-        on_delete=models.PROTECT, 
+        'users.User',
+        on_delete=models.PROTECT,
         related_name="%(class)s_created",
         null=True,
         blank=True
     )
     updated_by = models.ForeignKey(
-        'users.User', 
-        on_delete=models.PROTECT, 
+        'users.User',
+        on_delete=models.PROTECT,
         related_name="%(class)s_updated",
         null=True,
         blank=True
@@ -204,4 +204,22 @@ class SyncTask(models.Model):
 
     def __str__(self):
         return f"Task {self.id} for {self.entity_type} - {self.status}"
+
+
+class ExportJob(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    status = models.CharField(max_length=50, default='PENDING', choices=[
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed')
+    ])
+    user = models.ForeignKey('users.User', on_delete=models.CASCADE)
+    file = models.FileField(upload_to='exports/', blank=True, null=True)
+    error_message = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Export Job {self.id} - {self.status}"
 

@@ -1,7 +1,8 @@
-from django.test import override_settings
 import pytest
+from django.test import override_settings
 
-from .models import Record, Subject, Visit
+from .models import Record
+
 
 @pytest.mark.django_db
 @override_settings(CLINICAL_API_KEY="test_api_key_123")
@@ -72,7 +73,7 @@ def test_multi_level_data_import(client):
 
 
 @pytest.mark.django_db
-@override_settings(CLINICAL_API_KEY="test_api_key_123")
+@override_settings(CLINICAL_API_KEY="test_api_key_123", CELERY_TASK_ALWAYS_EAGER=True)
 def test_longitudinal_reconstruction(client):
     # Setup data
     client.post("/api/clinical/studies", data={"external_id": "study-2", "name": "Study 2"}, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
@@ -81,20 +82,20 @@ def test_longitudinal_reconstruction(client):
     client.post("/api/clinical/intervals", data={"external_id": "int-2", "study_ext_id": "study-2", "name": "Interval 2"}, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
     client.post("/api/clinical/forms", data={"external_id": "form-2", "study_ext_id": "study-2", "name": "Form 2"}, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
     client.post("/api/clinical/variables", data={"external_id": "var-2", "form_ext_id": "form-2", "name": "Variable 2"}, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
-    
+
     # Baseline visit
     client.post("/api/clinical/visits", data={
-        "external_id": "visit-base", 
-        "subject_ext_id": "sub-2", 
+        "external_id": "visit-base",
+        "subject_ext_id": "sub-2",
         "interval_ext_id": "int-2",
         "clinical_timestamp": "2024-01-01T10:00:00Z"
     }, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
-    
+
     # Record at Day 10
     client.post("/api/clinical/records", data={
-        "external_id": "rec-day10", 
-        "visit_ext_id": "visit-base", 
-        "variable_ext_id": "var-2", 
+        "external_id": "rec-day10",
+        "visit_ext_id": "visit-base",
+        "variable_ext_id": "var-2",
         "value": "90",
         "clinical_timestamp": "2024-01-11T10:00:00Z",
         "source_sequence": 2
@@ -102,34 +103,39 @@ def test_longitudinal_reconstruction(client):
 
     # Record at Day 5 (ingested out of order)
     client.post("/api/clinical/records", data={
-        "external_id": "rec-day5", 
-        "visit_ext_id": "visit-base", 
-        "variable_ext_id": "var-2", 
+        "external_id": "rec-day5",
+        "visit_ext_id": "visit-base",
+        "variable_ext_id": "var-2",
         "value": "85",
         "clinical_timestamp": "2024-01-06T10:00:00Z",
         "source_sequence": 1
     }, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
-    
+
     # Check offsets
     rec_day10 = Record.objects.get(external_id="rec-day10")
     assert rec_day10.offset_days == 10
-    
+
     rec_day5 = Record.objects.get(external_id="rec-day5")
     assert rec_day5.offset_days == 5
-    
+
     # Check export order (source sequence priorities)
-    resp = client.get("/api/clinical/export/cdisc", HTTP_X_API_KEY="test_api_key_123")
-    assert resp.status_code == 200
-    
-    import zipfile
-    import io
+    resp = client.post("/api/clinical/export/cdisc", HTTP_X_API_KEY="test_api_key_123")
+    assert resp.status_code == 202
+    job_id = resp.json()["job_id"]
+
+    download_resp = client.get(f"/api/clinical/export/jobs/{job_id}/download", HTTP_X_API_KEY="test_api_key_123")
+    assert download_resp.status_code == 200
+
     import csv
-    
-    z = zipfile.ZipFile(io.BytesIO(resp.content))
+    import io
+    import zipfile
+
+    content = b"".join(download_resp.streaming_content)
+    z = zipfile.ZipFile(io.BytesIO(content))
     vs_csv = z.read("VS.csv").decode('utf-8').splitlines()
     reader = csv.DictReader(vs_csv)
     rows = list(reader)
-    
+
     assert len(rows) == 2
     # Ensure ordered by source_sequence: rec-day5 then rec-day10
     assert rows[0]["VSORRES"] == "85"
@@ -140,7 +146,7 @@ def test_longitudinal_reconstruction(client):
 @pytest.mark.django_db
 def test_sync_job_endpoint(client):
     from clinical.models import SyncJob
-    
+
     payload = {
         "entities": [
             {
@@ -155,7 +161,7 @@ def test_sync_job_endpoint(client):
             }
         ]
     }
-    
+
     resp = client.post(
         "/api/clinical/sync-jobs",
         data=payload,
@@ -164,7 +170,7 @@ def test_sync_job_endpoint(client):
     assert resp.status_code == 202
     data = resp.json()
     assert "job_id" in data
-    
+
     job_id = data["job_id"]
     job = SyncJob.objects.get(id=job_id)
     if job.status == "FAILED":

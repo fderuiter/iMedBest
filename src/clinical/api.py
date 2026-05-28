@@ -1,9 +1,10 @@
 # ruff: noqa: RUF012, ERA001
 
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
 from ninja.security import APIKeyHeader
-from django.conf import settings
+
 
 class StaticAPIKey(APIKeyHeader):
     param_name = "X-API-Key"
@@ -19,9 +20,9 @@ class StaticAPIKey(APIKeyHeader):
             return key
         return None
 
-from .export import generate_cdisc_export
 from .models import (
     Coding,
+    ExportJob,
     Form,
     Interval,
     Query,
@@ -35,12 +36,17 @@ from .models import (
     Variable,
     Visit,
 )
-from .schemas import SyncJobRequest, SyncJobResponse
-from .tasks import orchestrate_sync_job
+from .schemas import ExportJobResponse, SyncJobRequest, SyncJobResponse
+from .tasks import orchestrate_sync_job, process_export_job
 
 router = Router(auth=StaticAPIKey())
 
 # --- Schemas ---
+
+class ExportJobSchemaOut(ModelSchema):
+    class Meta:
+        model = ExportJob
+        fields = ["id", "status", "error_message", "created_at", "updated_at"]
 
 class JobStatusSchemaOut(ModelSchema):
     class Meta:
@@ -528,7 +534,7 @@ def list_revisions(request):
 
 
 
-@router.get("/export/cdisc")
+@router.post("/export/cdisc", response={202: ExportJobResponse})
 def export_cdisc_package(request):
     # Check data-extraction privileges
     roles = getattr(request, 'user_roles', [])
@@ -536,4 +542,47 @@ def export_cdisc_package(request):
     if not (has_privilege or request.user.is_staff or request.user.is_superuser):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Missing data-extraction privileges")
-    return generate_cdisc_export(request)
+
+    job = ExportJob.objects.create(
+        user=request.user,
+        status='PENDING'
+    )
+
+    process_export_job.delay(job.id)
+
+    return 202, ExportJobResponse(job_id=job.id, status=job.status, message="Export job queued")
+
+@router.get("/export/jobs", response=list[ExportJobSchemaOut])
+def list_export_jobs(request):
+    return ExportJob.objects.filter(user=request.user).order_by('-created_at')
+
+@router.get("/export/jobs/{job_id}", response=ExportJobSchemaOut)
+def get_export_job(request, job_id: str):
+    return get_object_or_404(ExportJob, id=job_id, user=request.user)
+
+@router.post("/export/jobs/{job_id}/retry", response={202: ExportJobResponse})
+def retry_export_job(request, job_id: str):
+    job = get_object_or_404(ExportJob, id=job_id, user=request.user)
+    if job.status == 'COMPLETED':
+        from django.http import HttpResponseBadRequest
+        return HttpResponseBadRequest("Job already completed")
+
+    job.status = 'PENDING'
+    job.error_message = None
+    job.save(update_fields=['status', 'error_message'])
+
+    process_export_job.delay(job.id)
+
+    return 202, ExportJobResponse(job_id=job.id, status=job.status, message="Export job re-queued")
+
+@router.get("/export/jobs/{job_id}/download")
+def download_export_job(request, job_id: str):
+    job = get_object_or_404(ExportJob, id=job_id, user=request.user)
+    if job.status != 'COMPLETED' or not job.file:
+        from django.http import HttpResponseBadRequest
+        return HttpResponseBadRequest("File not ready")
+
+    from django.http import FileResponse
+    response = FileResponse(job.file.open('rb'), content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="cdisc_export_{job.id}.zip"'
+    return response

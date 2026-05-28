@@ -1,41 +1,23 @@
-from unittest.mock import patch
-
+from django.test import override_settings
 import pytest
 
 from .models import Record, Subject, Visit
 
-@pytest.fixture(autouse=True)
-def mock_auth():
-    def fake_auth(self, request, token):
-        if token != "test_token":
-            return None
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        user, _ = User.objects.get_or_create(username='testuser')
-        if not user.is_staff:
-            user.is_staff = True
-            user.save()
-        request.user = user
-        request.user_roles = ['cdisc']
-        return token
-
-    with patch('users.auth.OIDCBearer.authenticate', new=fake_auth):
-        yield
-
 @pytest.mark.django_db
+@override_settings(CLINICAL_API_KEY="test_api_key_123")
 def test_multi_level_data_import(client):
     # Level 1
     study_resp = client.post(
         "/api/clinical/studies",
         data={"external_id": "study-1", "name": "Study 1"},
-        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token",
+        content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
     assert study_resp.status_code == 200
 
     site_resp = client.post(
         "/api/clinical/sites",
         data={"external_id": "site-1", "study_ext_id": "study-1", "name": "Site 1"},
-        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token",
+        content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
     assert site_resp.status_code == 200
 
@@ -43,21 +25,21 @@ def test_multi_level_data_import(client):
     subject_resp = client.post(
         "/api/clinical/subjects",
         data={"external_id": "sub-1", "site_ext_id": "site-1", "name": "Subject 1"},
-        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token",
+        content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
     assert subject_resp.status_code == 200
 
     form_resp = client.post(
         "/api/clinical/forms",
         data={"external_id": "form-1", "study_ext_id": "study-1", "name": "Form 1"},
-        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token",
+        content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
     assert form_resp.status_code == 200
 
     int_resp = client.post(
         "/api/clinical/intervals",
         data={"external_id": "int-1", "study_ext_id": "study-1", "name": "Interval 1"},
-        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token",
+        content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
     assert int_resp.status_code == 200
 
@@ -65,14 +47,14 @@ def test_multi_level_data_import(client):
     var_resp = client.post(
         "/api/clinical/variables",
         data={"external_id": "var-1", "form_ext_id": "form-1", "name": "Variable 1"},
-        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token",
+        content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
     assert var_resp.status_code == 200
 
     visit_resp = client.post(
         "/api/clinical/visits",
         data={"external_id": "visit-1", "subject_ext_id": "sub-1", "interval_ext_id": "int-1"},
-        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token",
+        content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
     assert visit_resp.status_code == 200
 
@@ -80,7 +62,7 @@ def test_multi_level_data_import(client):
     record_resp = client.post(
         "/api/clinical/records",
         data={"external_id": "rec-1", "visit_ext_id": "visit-1", "variable_ext_id": "var-1", "value": "120/80"},
-        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token",
+        content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
     assert record_resp.status_code == 200
 
@@ -90,14 +72,15 @@ def test_multi_level_data_import(client):
 
 
 @pytest.mark.django_db
+@override_settings(CLINICAL_API_KEY="test_api_key_123")
 def test_longitudinal_reconstruction(client):
     # Setup data
-    client.post("/api/clinical/studies", data={"external_id": "study-2", "name": "Study 2"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
-    client.post("/api/clinical/sites", data={"external_id": "site-2", "study_ext_id": "study-2", "name": "Site 2"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
-    client.post("/api/clinical/subjects", data={"external_id": "sub-2", "site_ext_id": "site-2", "name": "Subject 2"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
-    client.post("/api/clinical/intervals", data={"external_id": "int-2", "study_ext_id": "study-2", "name": "Interval 2"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
-    client.post("/api/clinical/forms", data={"external_id": "form-2", "study_ext_id": "study-2", "name": "Form 2"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
-    client.post("/api/clinical/variables", data={"external_id": "var-2", "form_ext_id": "form-2", "name": "Variable 2"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    client.post("/api/clinical/studies", data={"external_id": "study-2", "name": "Study 2"}, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
+    client.post("/api/clinical/sites", data={"external_id": "site-2", "study_ext_id": "study-2", "name": "Site 2"}, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
+    client.post("/api/clinical/subjects", data={"external_id": "sub-2", "site_ext_id": "site-2", "name": "Subject 2"}, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
+    client.post("/api/clinical/intervals", data={"external_id": "int-2", "study_ext_id": "study-2", "name": "Interval 2"}, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
+    client.post("/api/clinical/forms", data={"external_id": "form-2", "study_ext_id": "study-2", "name": "Form 2"}, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
+    client.post("/api/clinical/variables", data={"external_id": "var-2", "form_ext_id": "form-2", "name": "Variable 2"}, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
     
     # Baseline visit
     client.post("/api/clinical/visits", data={
@@ -105,7 +88,7 @@ def test_longitudinal_reconstruction(client):
         "subject_ext_id": "sub-2", 
         "interval_ext_id": "int-2",
         "clinical_timestamp": "2024-01-01T10:00:00Z"
-    }, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    }, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
     
     # Record at Day 10
     client.post("/api/clinical/records", data={
@@ -115,7 +98,7 @@ def test_longitudinal_reconstruction(client):
         "value": "90",
         "clinical_timestamp": "2024-01-11T10:00:00Z",
         "source_sequence": 2
-    }, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    }, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
 
     # Record at Day 5 (ingested out of order)
     client.post("/api/clinical/records", data={
@@ -125,7 +108,7 @@ def test_longitudinal_reconstruction(client):
         "value": "85",
         "clinical_timestamp": "2024-01-06T10:00:00Z",
         "source_sequence": 1
-    }, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    }, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
     
     # Check offsets
     rec_day10 = Record.objects.get(external_id="rec-day10")
@@ -135,7 +118,7 @@ def test_longitudinal_reconstruction(client):
     assert rec_day5.offset_days == 5
     
     # Check export order (source sequence priorities)
-    resp = client.get("/api/clinical/export/cdisc", HTTP_AUTHORIZATION="Bearer test_token")
+    resp = client.get("/api/clinical/export/cdisc", HTTP_X_API_KEY="test_api_key_123")
     assert resp.status_code == 200
     
     import zipfile

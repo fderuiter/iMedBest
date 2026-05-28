@@ -17,6 +17,7 @@ environ.Env.read_env(ROOT_DIR / ".env")
 SECRET_KEY = env("SECRET_KEY", default="django-insecure-dev-only-key")
 DEBUG = env("DEBUG", default=False)
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[])
+CLINICAL_API_KEY = env("CLINICAL_API_KEY", default=None)
 
 INSTALLED_APPS = [
     "django.contrib.admin",

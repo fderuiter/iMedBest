@@ -2,13 +2,27 @@
 
 from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
+from ninja.security import APIKeyHeader
+from django.conf import settings
 
-from users.auth import OIDCBearer
+class StaticAPIKey(APIKeyHeader):
+    param_name = "X-API-Key"
+
+    def authenticate(self, request, key):
+        expected_key = getattr(settings, "CLINICAL_API_KEY", None)
+        if expected_key and key == expected_key:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            user, _ = User.objects.get_or_create(username="api_user", defaults={"is_staff": True})
+            request.user = user
+            request.user_roles = ['cdisc']
+            return key
+        return None
 
 from .export import generate_cdisc_export
 from .models import Coding, Form, Interval, Query, Record, RecordRevision, Site, Study, Subject, Variable, Visit
 
-router = Router(auth=OIDCBearer())
+router = Router(auth=StaticAPIKey())
 
 # --- Schemas ---
 

@@ -1,4 +1,8 @@
+import uuid
+
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 
 class ClinicalEntity(models.Model):
@@ -85,6 +89,16 @@ class Query(ClinicalEntity):
     text = models.TextField()
 
 
-class Revision(ClinicalEntity):
+class RecordRevision(ClinicalEntity):
     record = models.ForeignKey(Record, on_delete=models.CASCADE, related_name="revisions")
     value = models.TextField()
+
+
+
+@receiver(post_save, sender=Record)
+def create_record_revision(sender, instance, created, **kwargs):
+    RecordRevision.objects.create(
+        external_id=str(uuid.uuid4()),
+        record=instance,
+        value=instance.value
+    )

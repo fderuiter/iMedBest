@@ -3,7 +3,8 @@
 from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
 
-from .models import Coding, Form, Interval, Query, Record, Revision, Site, Study, Subject, Variable, Visit
+from .export import generate_cdisc_export
+from .models import Coding, Form, Interval, Query, Record, RecordRevision, Site, Study, Subject, Variable, Visit
 
 router = Router()
 
@@ -150,17 +151,17 @@ class QuerySchemaOut(ModelSchema):
         fields = ["id", "external_id", "text", "record", "created_at", "updated_at"]
 
 
-class RevisionSchemaIn(ModelSchema):
+class RecordRevisionSchemaIn(ModelSchema):
     record_ext_id: str
 
     class Meta:
-        model = Revision
+        model = RecordRevision
         fields = ["external_id", "value"]
 
 
-class RevisionSchemaOut(ModelSchema):
+class RecordRevisionSchemaOut(ModelSchema):
     class Meta:
-        model = Revision
+        model = RecordRevision
         fields = ["id", "external_id", "value", "record", "created_at", "updated_at"]
 
 
@@ -316,16 +317,23 @@ def list_queries(request):
     return Query.objects.select_related("record").all()
 
 
-# L4: Revision
-@router.post("/revisions", response=RevisionSchemaOut)
-def sync_revision(request, payload: RevisionSchemaIn):
+# L4: RecordRevision
+@router.post("/revisions", response=RecordRevisionSchemaOut)
+def sync_revision(request, payload: RecordRevisionSchemaIn):
     record = get_object_or_404(Record, external_id=payload.record_ext_id)
-    revision, _ = Revision.objects.update_or_create(
+    revision, _ = RecordRevision.objects.update_or_create(
         external_id=payload.external_id, defaults={"record": record, "value": payload.value}
     )
     return revision
 
 
-@router.get("/revisions", response=list[RevisionSchemaOut])
+@router.get("/revisions", response=list[RecordRevisionSchemaOut])
 def list_revisions(request):
-    return Revision.objects.select_related("record").all()
+    return RecordRevision.objects.select_related("record").all()
+
+
+
+
+@router.get("/export/cdisc")
+def export_cdisc_package(request):
+    return generate_cdisc_export(request)

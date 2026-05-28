@@ -3,10 +3,12 @@
 from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
 
+from users.auth import OIDCBearer
+
 from .export import generate_cdisc_export
 from .models import Coding, Form, Interval, Query, Record, RecordRevision, Site, Study, Subject, Variable, Visit
 
-router = Router()
+router = Router(auth=OIDCBearer())
 
 # --- Schemas ---
 
@@ -336,4 +338,10 @@ def list_revisions(request):
 
 @router.get("/export/cdisc")
 def export_cdisc_package(request):
+    # Check data-extraction privileges
+    roles = getattr(request, 'user_roles', [])
+    has_privilege = any(r in str(roles).lower() for r in ['export', 'extractor', 'cdisc'])
+    if not (has_privilege or request.user.is_staff or request.user.is_superuser):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Missing data-extraction privileges")
     return generate_cdisc_export(request)

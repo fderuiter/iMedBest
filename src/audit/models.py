@@ -9,6 +9,8 @@ class AuditLog(models.Model):
         ('DELETE', 'Delete'),
         ('LOGIN', 'Login'),
         ('LOGOUT', 'Logout'),
+        ('SECURITY', 'Security'),
+        ('UNAUTH', 'Unauth'),
     )
 
     action = models.CharField(max_length=10, choices=ACTION_CHOICES)

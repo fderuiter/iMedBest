@@ -25,6 +25,7 @@ services:
       context: .
       target: development
     container_name: imedbest_web
+    profiles: ["dev"]
     command: python src/manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app                     # Bind-mount project root for hot-reloading
@@ -58,10 +59,12 @@ services:
       context: .
       target: development
     container_name: imedbest_worker
-    command: celery -A config worker -l info
+    profiles: ["dev"]
+    command: celery -A config worker -l info --workdir /app/src
     volumes:
       - .:/app
     environment:
+      - RUN_MIGRATIONS=false
       - DEBUG=True
       - SECRET_KEY=dev_secret_key_placeholder_for_local_env_only
       - DATABASE_URL=postgres://postgres_user:dev_password_123@db:5432/imedbest_dev
@@ -75,8 +78,65 @@ services:
     networks:
       - imedbest_network
 
+  web-prod:
+    build:
+      context: .
+      target: production
+    container_name: imedbest_web_prod
+    profiles: ["prod"]
+    volumes:
+      - static_volume:/app/staticfiles
+    environment:
+      - SECRET_KEY=prod_secret_key_placeholder
+      - DATABASE_URL=postgres://postgres_user:dev_password_123@db:5432/imedbest_dev
+      - ALLOWED_HOSTS=localhost,127.0.0.1,web-prod,nginx
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - imedbest_network
+
+  worker-prod:
+    build:
+      context: .
+      target: production
+    container_name: imedbest_worker_prod
+    profiles: ["prod"]
+    command: celery -A config worker -l info --workdir /app/src
+    environment:
+      - RUN_MIGRATIONS=false
+      - COLLECT_STATIC=false
+      - SECRET_KEY=prod_secret_key_placeholder
+      - DATABASE_URL=postgres://postgres_user:dev_password_123@db:5432/imedbest_dev
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - imedbest_network
+
+  nginx:
+    image: nginx:alpine
+    container_name: imedbest_nginx
+    profiles: ["prod"]
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - static_volume:/app/staticfiles:ro
+    depends_on:
+      - web-prod
+    networks:
+      - imedbest_network
+
 volumes:
   postgres_data:
+  static_volume:
 
 networks:
   imedbest_network:

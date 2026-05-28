@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: imedbest_db
+    environment:
+      POSTGRES_DB: imedbest_dev
+      POSTGRES_USER: postgres_user
+      POSTGRES_PASSWORD: dev_password_123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - imedbest_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres_user -d imedbest_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      target: development
+    container_name: imedbest_web
+    command: python src/manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app                     # Bind-mount project root for hot-reloading
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=dev_secret_key_placeholder_for_local_env_only
+      - DATABASE_URL=postgres://postgres_user:dev_password_123@db:5432/imedbest_dev
+      - ALLOWED_HOSTS=localhost,127.0.0.1,web
+      - PYTHONDONTWRITEBYTECODE=1  # Prevent container Python from writing bytecode back to host
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - imedbest_network
+
+volumes:
+  postgres_data:
+
+networks:
+  imedbest_network:
+    driver: bridge

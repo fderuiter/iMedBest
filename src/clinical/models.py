@@ -19,7 +19,7 @@ class ClinicalEntity(models.Model):
         abstract = True
 
     def save(self, *args, **kwargs):
-        if hasattr(self, 'get_subject') and self.clinical_timestamp:
+        if hasattr(self, "get_subject") and self.clinical_timestamp:
             try:
                 subject = self.get_subject()
                 if subject:
@@ -58,7 +58,7 @@ class Subject(ClinicalEntity):
         The "Day 0" baseline event for a subject is defined as the clinical_timestamp
         of the chronologically earliest Visit. If no visits have timestamps, returns None.
         """
-        first_visit = self.visits.filter(clinical_timestamp__isnull=False).order_by('clinical_timestamp').first()
+        first_visit = self.visits.filter(clinical_timestamp__isnull=False).order_by("clinical_timestamp").first()
         return first_visit.clinical_timestamp if first_visit else None
 
     def __str__(self):
@@ -135,6 +135,15 @@ class RecordRevision(ClinicalEntity):
         return self.record.visit.subject
 
 
+class SyncStatus(models.Model):
+    last_successful_pull = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=50, default="UNKNOWN")
+    error_message = models.TextField(blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Sync Status: {self.status}"
+
 
 @receiver(post_save, sender=Record)
 def create_record_revision(sender, instance, created, **kwargs):
@@ -144,5 +153,5 @@ def create_record_revision(sender, instance, created, **kwargs):
         value=instance.value,
         clinical_timestamp=instance.clinical_timestamp,
         source_sequence=instance.source_sequence,
-        offset_days=instance.offset_days
+        offset_days=instance.offset_days,
     )

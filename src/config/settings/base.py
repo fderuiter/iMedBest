@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "clinical.apps.ClinicalConfig",
     "audit.apps.AuditConfig",
     "events.apps.EventsConfig",
+    "django_apscheduler",
 ]
 
 MIDDLEWARE = [

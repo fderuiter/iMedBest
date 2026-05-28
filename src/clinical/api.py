@@ -21,6 +21,7 @@ class StaticAPIKey(APIKeyHeader):
 
 from .export import generate_cdisc_export
 from .models import (
+    BufferedOrphan,
     Coding,
     Form,
     Interval,
@@ -262,7 +263,7 @@ def get_sync_job(request, job_id: str):
     return get_object_or_404(SyncJob, id=job_id, user=request.user)
 
 # L1: Study
-@router.post("/studies", response=StudySchemaOut)
+@router.post("/studies", response={200: StudySchemaOut, 202: dict})
 def sync_study(request, payload: StudySchemaIn):
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
@@ -275,6 +276,7 @@ def sync_study(request, payload: StudySchemaIn):
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
+    check_and_process_orphans(study.external_id)
     return study
 
 
@@ -284,9 +286,12 @@ def list_studies(request):
 
 
 # L1: Site
-@router.post("/sites", response=SiteSchemaOut)
+@router.post("/sites", response={200: SiteSchemaOut, 202: dict})
 def sync_site(request, payload: SiteSchemaIn):
-    study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
+    study = get_accessible_studies(request.user).filter(external_id=payload.study_ext_id).first()
+    if not study:
+        BufferedOrphan.objects.create(entity_type='Site', missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
         "source_sequence": payload.source_sequence,
@@ -299,6 +304,7 @@ def sync_site(request, payload: SiteSchemaIn):
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
+    check_and_process_orphans(site.external_id)
     return site
 
 
@@ -308,9 +314,12 @@ def list_sites(request):
 
 
 # L2: Subject
-@router.post("/subjects", response=SubjectSchemaOut)
+@router.post("/subjects", response={200: SubjectSchemaOut, 202: dict})
 def sync_subject(request, payload: SubjectSchemaIn):
-    site = get_object_or_404(get_accessible_sites(request.user), external_id=payload.site_ext_id)
+    site = get_accessible_sites(request.user).filter(external_id=payload.site_ext_id).first()
+    if not site:
+        BufferedOrphan.objects.create(entity_type='Subject', missing_parent_id=payload.site_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
         "source_sequence": payload.source_sequence,
@@ -323,6 +332,7 @@ def sync_subject(request, payload: SubjectSchemaIn):
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
+    check_and_process_orphans(subject.external_id)
     return subject
 
 
@@ -332,9 +342,12 @@ def list_subjects(request):
 
 
 # L2: Form
-@router.post("/forms", response=FormSchemaOut)
+@router.post("/forms", response={200: FormSchemaOut, 202: dict})
 def sync_form(request, payload: FormSchemaIn):
-    study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
+    study = get_accessible_studies(request.user).filter(external_id=payload.study_ext_id).first()
+    if not study:
+        BufferedOrphan.objects.create(entity_type='Form', missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
         "source_sequence": payload.source_sequence,
@@ -347,6 +360,7 @@ def sync_form(request, payload: FormSchemaIn):
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
+    check_and_process_orphans(form.external_id)
     return form
 
 
@@ -356,9 +370,12 @@ def list_forms(request):
 
 
 # L2: Interval
-@router.post("/intervals", response=IntervalSchemaOut)
+@router.post("/intervals", response={200: IntervalSchemaOut, 202: dict})
 def sync_interval(request, payload: IntervalSchemaIn):
-    study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
+    study = get_accessible_studies(request.user).filter(external_id=payload.study_ext_id).first()
+    if not study:
+        BufferedOrphan.objects.create(entity_type='Interval', missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
         "source_sequence": payload.source_sequence,
@@ -371,6 +388,7 @@ def sync_interval(request, payload: IntervalSchemaIn):
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
+    check_and_process_orphans(interval.external_id)
     return interval
 
 
@@ -380,9 +398,12 @@ def list_intervals(request):
 
 
 # L3: Variable
-@router.post("/variables", response=VariableSchemaOut)
+@router.post("/variables", response={200: VariableSchemaOut, 202: dict})
 def sync_variable(request, payload: VariableSchemaIn):
-    form = get_object_or_404(Form.objects.filter(study__in=get_accessible_studies(request.user)), external_id=payload.form_ext_id)
+    form = Form.objects.filter(study__in=get_accessible_studies(request.user)).filter(external_id=payload.form_ext_id).first()
+    if not form:
+        BufferedOrphan.objects.create(entity_type='Variable', missing_parent_id=payload.form_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
         "source_sequence": payload.source_sequence,
@@ -395,6 +416,7 @@ def sync_variable(request, payload: VariableSchemaIn):
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
+    check_and_process_orphans(variable.external_id)
     return variable
 
 
@@ -404,10 +426,16 @@ def list_variables(request):
 
 
 # L3: Visit
-@router.post("/visits", response=VisitSchemaOut)
+@router.post("/visits", response={200: VisitSchemaOut, 202: dict})
 def sync_visit(request, payload: VisitSchemaIn):
-    subject = get_object_or_404(get_accessible_subjects(request.user), external_id=payload.subject_ext_id)
-    interval = get_object_or_404(Interval.objects.filter(study__in=get_accessible_studies(request.user)), external_id=payload.interval_ext_id)
+    subject = get_accessible_subjects(request.user).filter(external_id=payload.subject_ext_id).first()
+    if not subject:
+        BufferedOrphan.objects.create(entity_type='Visit', missing_parent_id=payload.subject_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
+    interval = Interval.objects.filter(study__in=get_accessible_studies(request.user)).filter(external_id=payload.interval_ext_id).first()
+    if not interval:
+        BufferedOrphan.objects.create(entity_type='Visit', missing_parent_id=payload.interval_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
         "source_sequence": payload.source_sequence,
@@ -420,6 +448,7 @@ def sync_visit(request, payload: VisitSchemaIn):
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
+    check_and_process_orphans(visit.external_id)
     return visit
 
 
@@ -429,10 +458,16 @@ def list_visits(request):
 
 
 # L4: Record
-@router.post("/records", response=RecordSchemaOut)
+@router.post("/records", response={200: RecordSchemaOut, 202: dict})
 def sync_record(request, payload: RecordSchemaIn):
-    visit = get_object_or_404(Visit.objects.filter(subject__in=get_accessible_subjects(request.user)), external_id=payload.visit_ext_id)
-    variable = get_object_or_404(Variable.objects.filter(form__study__in=get_accessible_studies(request.user)), external_id=payload.variable_ext_id)
+    visit = Visit.objects.filter(subject__in=get_accessible_subjects(request.user)).filter(external_id=payload.visit_ext_id).first()
+    if not visit:
+        BufferedOrphan.objects.create(entity_type='Record', missing_parent_id=payload.visit_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
+    variable = Variable.objects.filter(form__study__in=get_accessible_studies(request.user)).filter(external_id=payload.variable_ext_id).first()
+    if not variable:
+        BufferedOrphan.objects.create(entity_type='Record', missing_parent_id=payload.variable_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
         "source_sequence": payload.source_sequence,
@@ -446,6 +481,7 @@ def sync_record(request, payload: RecordSchemaIn):
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
+    check_and_process_orphans(record.external_id)
     return record
 
 
@@ -455,9 +491,12 @@ def list_records(request):
 
 
 # L4: Coding
-@router.post("/codings", response=CodingSchemaOut)
+@router.post("/codings", response={200: CodingSchemaOut, 202: dict})
 def sync_coding(request, payload: CodingSchemaIn):
-    record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
+    record = Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)).filter(external_id=payload.record_ext_id).first()
+    if not record:
+        BufferedOrphan.objects.create(entity_type='Coding', missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
         "source_sequence": payload.source_sequence,
@@ -470,6 +509,7 @@ def sync_coding(request, payload: CodingSchemaIn):
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
+    check_and_process_orphans(coding.external_id)
     return coding
 
 
@@ -479,9 +519,12 @@ def list_codings(request):
 
 
 # L4: Query
-@router.post("/queries", response=QuerySchemaOut)
+@router.post("/queries", response={200: QuerySchemaOut, 202: dict})
 def sync_query(request, payload: QuerySchemaIn):
-    record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
+    record = Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)).filter(external_id=payload.record_ext_id).first()
+    if not record:
+        BufferedOrphan.objects.create(entity_type='Query', missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
         "source_sequence": payload.source_sequence,
@@ -494,6 +537,7 @@ def sync_query(request, payload: QuerySchemaIn):
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
+    check_and_process_orphans(query.external_id)
     return query
 
 
@@ -503,9 +547,12 @@ def list_queries(request):
 
 
 # L4: RecordRevision
-@router.post("/revisions", response=RecordRevisionSchemaOut)
+@router.post("/revisions", response={200: RecordRevisionSchemaOut, 202: dict})
 def sync_revision(request, payload: RecordRevisionSchemaIn):
-    record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
+    record = Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)).filter(external_id=payload.record_ext_id).first()
+    if not record:
+        BufferedOrphan.objects.create(entity_type='RecordRevision', missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user)
+        return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
         "source_sequence": payload.source_sequence,
@@ -518,6 +565,7 @@ def sync_revision(request, payload: RecordRevisionSchemaIn):
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
+    check_and_process_orphans(revision.external_id)
     return revision
 
 
@@ -537,3 +585,52 @@ def export_cdisc_package(request):
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("Missing data-extraction privileges")
     return generate_cdisc_export(request)
+
+class BufferedOrphanSchemaOut(ModelSchema):
+    class Meta:
+        model = BufferedOrphan
+        fields = ["id", "entity_type", "missing_parent_id", "created_at"]
+
+@router.get("/orphans", response=list[BufferedOrphanSchemaOut])
+def list_orphans(request):
+    return BufferedOrphan.objects.all()
+
+from django.db import transaction
+
+def check_and_process_orphans(parent_external_id):
+    orphans = list(BufferedOrphan.objects.filter(missing_parent_id=parent_external_id))
+    for orphan in orphans:
+        try:
+            with transaction.atomic():
+                _reprocess_orphan(orphan)
+        except Exception as e:
+            pass
+
+def _reprocess_orphan(orphan):
+    req = type('DummyRequest', (object,), {'user': orphan.user, 'user_roles': ['cdisc']})()
+    
+    mapping = {
+        'Site': (sync_site, SiteSchemaIn),
+        'Subject': (sync_subject, SubjectSchemaIn),
+        'Form': (sync_form, FormSchemaIn),
+        'Interval': (sync_interval, IntervalSchemaIn),
+        'Variable': (sync_variable, VariableSchemaIn),
+        'Visit': (sync_visit, VisitSchemaIn),
+        'Record': (sync_record, RecordSchemaIn),
+        'Coding': (sync_coding, CodingSchemaIn),
+        'Query': (sync_query, QuerySchemaIn),
+        'RecordRevision': (sync_revision, RecordRevisionSchemaIn),
+    }
+    
+    if orphan.entity_type not in mapping:
+        orphan.delete()
+        return
+        
+    func, schema_cls = mapping[orphan.entity_type]
+    payload = schema_cls(**orphan.payload)
+    
+    # Process
+    func(req, payload)
+    
+    # Delete after processing
+    orphan.delete()

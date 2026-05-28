@@ -42,6 +42,26 @@ services:
     networks:
       - imedbest_network
 
+  worker:
+    build:
+      context: .
+      target: development
+    container_name: imedbest_worker
+    command: python src/manage.py run_worker
+    volumes:
+      - .:/app
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=dev_secret_key_placeholder_for_local_env_only
+      - DATABASE_URL=postgres://postgres_user:dev_password_123@db:5432/imedbest_dev
+      - ALLOWED_HOSTS=localhost,127.0.0.1,web
+      - PYTHONDONTWRITEBYTECODE=1
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - imedbest_network
+
 volumes:
   postgres_data:
 

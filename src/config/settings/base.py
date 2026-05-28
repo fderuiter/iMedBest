@@ -28,7 +28,10 @@ INSTALLED_APPS = [
     "users.apps.UsersConfig",
     "clinical.apps.ClinicalConfig",
     "audit.apps.AuditConfig",
+    "async_jobs",
 ]
+
+DATABASE_ROUTERS = ['async_jobs.routers.ObservabilityRouter']
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pipeline Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .chart-container { width: 45%; display: inline-block; }
+    </style>
+</head>
+<body>
+    <h1>Enterprise Async Pipeline Dashboard</h1>
+    <div class="chart-container">
+        <canvas id="queueDepthChart"></canvas>
+    </div>
+    <div class="chart-container">
+        <canvas id="taskSuccessChart"></canvas>
+    </div>
+
+    <script>
+        const queueDepthCtx = document.getElementById('queueDepthChart').getContext('2d');
+        const taskSuccessCtx = document.getElementById('taskSuccessChart').getContext('2d');
+
+        const queueDepthChart = new Chart(queueDepthCtx, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Queue Depth', data: [], borderColor: 'blue' }] },
+            options: { animation: false }
+        });
+
+        const taskSuccessChart = new Chart(taskSuccessCtx, {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Task Success Rate (0=Fail, 1=Success)', data: [], backgroundColor: 'green' }] },
+            options: { animation: false, scales: { y: { min: 0, max: 1 } } }
+        });
+
+        function fetchData() {
+            fetch('/dashboard/api/')
+                .then(res => res.json())
+                .then(data => {
+                    queueDepthChart.data.labels = data.queue_depth.map(d => new Date(d.timestamp).toLocaleTimeString());
+                    queueDepthChart.data.datasets[0].data = data.queue_depth.map(d => d.value);
+                    queueDepthChart.update();
+
+                    taskSuccessChart.data.labels = data.task_success.map(d => new Date(d.timestamp).toLocaleTimeString());
+                    taskSuccessChart.data.datasets[0].data = data.task_success.map(d => d.value);
+                    taskSuccessChart.update();
+                });
+        }
+
+        setInterval(fetchData, 2000);
+        fetchData();
+    </script>
+</body>
+</html>

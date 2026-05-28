@@ -4,7 +4,13 @@ from .base import env
 DEBUG = False
 SECRET_KEY = env("SECRET_KEY")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
-DATABASES = {"default": env.db("DATABASE_URL")}
+DATABASES = {
+    "default": env.db("DATABASE_URL"),
+    "observability": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": env("OBSERVABILITY_DB_PATH", default="/app/observability.sqlite3"),
+    }
+}
 
 SECURE_SSL_REDIRECT = True
 SECURE_CONTENT_TYPE_NOSNIFF = True

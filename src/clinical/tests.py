@@ -1,7 +1,58 @@
 import pytest
 
+from async_jobs.models import Job
+from clinical import services
+from clinical.api import (
+    CodingSchemaIn,
+    FormSchemaIn,
+    IntervalSchemaIn,
+    QuerySchemaIn,
+    RecordRevisionSchemaIn,
+    RecordSchemaIn,
+    SiteSchemaIn,
+    StudySchemaIn,
+    SubjectSchemaIn,
+    VariableSchemaIn,
+    VisitSchemaIn,
+)
+
 from .models import Record
 
+
+def process_jobs():
+    schemas = {
+        "sync_study": StudySchemaIn,
+        "sync_site": SiteSchemaIn,
+        "sync_subject": SubjectSchemaIn,
+        "sync_form": FormSchemaIn,
+        "sync_interval": IntervalSchemaIn,
+        "sync_variable": VariableSchemaIn,
+        "sync_visit": VisitSchemaIn,
+        "sync_record": RecordSchemaIn,
+        "sync_coding": CodingSchemaIn,
+        "sync_query": QuerySchemaIn,
+        "sync_revision": RecordRevisionSchemaIn,
+    }
+    endpoints = {
+        "sync_study": services.sync_study,
+        "sync_site": services.sync_site,
+        "sync_subject": services.sync_subject,
+        "sync_form": services.sync_form,
+        "sync_interval": services.sync_interval,
+        "sync_variable": services.sync_variable,
+        "sync_visit": services.sync_visit,
+        "sync_record": services.sync_record,
+        "sync_coding": services.sync_coding,
+        "sync_query": services.sync_query,
+        "sync_revision": services.sync_revision,
+    }
+    for job in Job.objects.filter(status='Pending').order_by('created_at'):
+        handler = endpoints[job.endpoint]
+        schema_cls = schemas[job.endpoint]
+        payload_obj = schema_cls(**job.payload)
+        handler(payload_obj)
+        job.status = 'Completed'
+        job.save()
 
 @pytest.mark.django_db
 def test_multi_level_data_import(client):
@@ -64,6 +115,8 @@ def test_multi_level_data_import(client):
         content_type="application/json",
     )
     assert record_resp.status_code == 200
+
+    process_jobs()
 
     record = Record.objects.get(external_id="rec-1")
     assert record.value == "120/80"

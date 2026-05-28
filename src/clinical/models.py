@@ -9,6 +9,7 @@ class ClinicalEntity(models.Model):
     class Meta:
         abstract = True
 
+
 # Level 1
 class Study(ClinicalEntity):
     name = models.CharField(max_length=255)
@@ -16,12 +17,14 @@ class Study(ClinicalEntity):
     def __str__(self):
         return self.name
 
+
 class Site(ClinicalEntity):
     study = models.ForeignKey(Study, on_delete=models.CASCADE, related_name="sites")
     name = models.CharField(max_length=255)
 
     def __str__(self):
         return self.name
+
 
 # Level 2
 class Subject(ClinicalEntity):
@@ -31,6 +34,7 @@ class Subject(ClinicalEntity):
     def __str__(self):
         return self.name or self.external_id
 
+
 class Form(ClinicalEntity):
     study = models.ForeignKey(Study, on_delete=models.CASCADE, related_name="forms")
     name = models.CharField(max_length=255)
@@ -38,12 +42,14 @@ class Form(ClinicalEntity):
     def __str__(self):
         return self.name
 
+
 class Interval(ClinicalEntity):
     study = models.ForeignKey(Study, on_delete=models.CASCADE, related_name="intervals")
     name = models.CharField(max_length=255)
 
     def __str__(self):
         return self.name
+
 
 # Level 3
 class Variable(ClinicalEntity):
@@ -53,6 +59,7 @@ class Variable(ClinicalEntity):
     def __str__(self):
         return self.name
 
+
 class Visit(ClinicalEntity):
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name="visits")
     interval = models.ForeignKey(Interval, on_delete=models.CASCADE, related_name="visits")
@@ -60,19 +67,23 @@ class Visit(ClinicalEntity):
     def __str__(self):
         return f"{self.subject} - {self.interval}"
 
+
 # Level 4
 class Record(ClinicalEntity):
     visit = models.ForeignKey(Visit, on_delete=models.CASCADE, related_name="records")
     variable = models.ForeignKey(Variable, on_delete=models.CASCADE, related_name="records")
     value = models.TextField(blank=True)
 
+
 class Coding(ClinicalEntity):
     record = models.ForeignKey(Record, on_delete=models.CASCADE, related_name="codings")
     code = models.CharField(max_length=255)
 
+
 class Query(ClinicalEntity):
     record = models.ForeignKey(Record, on_delete=models.CASCADE, related_name="queries")
     text = models.TextField()
+
 
 class Revision(ClinicalEntity):
     record = models.ForeignKey(Record, on_delete=models.CASCADE, related_name="revisions")

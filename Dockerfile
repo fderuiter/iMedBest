@@ -18,8 +18,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./
 
 # Compile development and main dependencies into the /venv directory using cache mounts
-RUN --mount=type=cache,target=/root/.cache/uv \
-    UV_PROJECT_ENVIRONMENT=/venv uv sync --frozen --no-install-project
+RUN UV_PROJECT_ENVIRONMENT=/venv uv sync --frozen --no-install-project
 
 
 # ==========================================
@@ -42,8 +41,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./
 
 # Compile production-only dependencies into the /venv directory using cache mounts
-RUN --mount=type=cache,target=/root/.cache/uv \
-    UV_PROJECT_ENVIRONMENT=/venv uv sync --frozen --no-dev --no-install-project
+RUN UV_PROJECT_ENVIRONMENT=/venv uv sync --frozen --no-dev --no-install-project
 
 
 # ==========================================
@@ -107,6 +105,7 @@ COPY src/ /app/src/
 
 # Set up unprivileged user
 RUN useradd -u 1000 -m django-user && \
+    mkdir -p /app/staticfiles && \
     chown -R django-user:django-user /app
 
 # Copy and configure entrypoint script
@@ -119,4 +118,4 @@ USER django-user
 EXPOSE 8000
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "config.wsgi:application"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--chdir", "src", "config.wsgi:application"]

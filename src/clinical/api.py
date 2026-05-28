@@ -1,5 +1,6 @@
 # ruff: noqa: RUF012, ERA001
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
 
@@ -197,20 +198,27 @@ def get_accessible_subjects(user):
 
 
 # L1: Study
-@router.post("/studies", response=StudySchemaOut)
-def sync_study(request, payload: StudySchemaIn):
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "name": payload.name,
-        "updated_by": request.user
-    }
-    study, _ = Study.objects.update_or_create(
-        external_id=payload.external_id, 
-        defaults=defaults,
-        create_defaults={**defaults, "created_by": request.user}
-    )
-    return study
+@router.post("/studies", response=list[StudySchemaOut] | StudySchemaOut)
+def sync_study(request, payload: list[StudySchemaIn] | StudySchemaIn):
+    """Synchronizes data. This endpoint is transactional; if a batch is provided and one fails, the entire batch is rolled back."""
+    is_list = isinstance(payload, list)
+    items = payload if is_list else [payload]
+    results = []
+    with transaction.atomic():
+        for item in items:
+            defaults = {
+                "clinical_timestamp": item.clinical_timestamp, 
+                "source_sequence": item.source_sequence, 
+                "name": item.name,
+                "updated_by": request.user
+            }
+            study, _ = Study.objects.update_or_create(
+                external_id=item.external_id, 
+                defaults=defaults,
+                create_defaults={**defaults, "created_by": request.user}
+            )
+            results.append(study)
+    return results if is_list else results[0]
 
 
 @router.get("/studies", response=list[StudySchemaOut])
@@ -219,22 +227,29 @@ def list_studies(request):
 
 
 # L1: Site
-@router.post("/sites", response=SiteSchemaOut)
-def sync_site(request, payload: SiteSchemaIn):
-    study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "study": study, 
-        "name": payload.name,
-        "updated_by": request.user
-    }
-    site, _ = Site.objects.update_or_create(
-        external_id=payload.external_id, 
-        defaults=defaults,
-        create_defaults={**defaults, "created_by": request.user}
-    )
-    return site
+@router.post("/sites", response=list[SiteSchemaOut] | SiteSchemaOut)
+def sync_site(request, payload: list[SiteSchemaIn] | SiteSchemaIn):
+    """Synchronizes data. This endpoint is transactional; if a batch is provided and one fails, the entire batch is rolled back."""
+    is_list = isinstance(payload, list)
+    items = payload if is_list else [payload]
+    results = []
+    with transaction.atomic():
+        for item in items:
+            study = get_object_or_404(get_accessible_studies(request.user), external_id=item.study_ext_id)
+            defaults = {
+                "clinical_timestamp": item.clinical_timestamp, 
+                "source_sequence": item.source_sequence, 
+                "study": study, 
+                "name": item.name,
+                "updated_by": request.user
+            }
+            site, _ = Site.objects.update_or_create(
+                external_id=item.external_id, 
+                defaults=defaults,
+                create_defaults={**defaults, "created_by": request.user}
+            )
+            results.append(site)
+    return results if is_list else results[0]
 
 
 @router.get("/sites", response=list[SiteSchemaOut])
@@ -243,22 +258,29 @@ def list_sites(request):
 
 
 # L2: Subject
-@router.post("/subjects", response=SubjectSchemaOut)
-def sync_subject(request, payload: SubjectSchemaIn):
-    site = get_object_or_404(get_accessible_sites(request.user), external_id=payload.site_ext_id)
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "site": site, 
-        "name": payload.name,
-        "updated_by": request.user
-    }
-    subject, _ = Subject.objects.update_or_create(
-        external_id=payload.external_id, 
-        defaults=defaults,
-        create_defaults={**defaults, "created_by": request.user}
-    )
-    return subject
+@router.post("/subjects", response=list[SubjectSchemaOut] | SubjectSchemaOut)
+def sync_subject(request, payload: list[SubjectSchemaIn] | SubjectSchemaIn):
+    """Synchronizes data. This endpoint is transactional; if a batch is provided and one fails, the entire batch is rolled back."""
+    is_list = isinstance(payload, list)
+    items = payload if is_list else [payload]
+    results = []
+    with transaction.atomic():
+        for item in items:
+            site = get_object_or_404(get_accessible_sites(request.user), external_id=item.site_ext_id)
+            defaults = {
+                "clinical_timestamp": item.clinical_timestamp, 
+                "source_sequence": item.source_sequence, 
+                "site": site, 
+                "name": item.name,
+                "updated_by": request.user
+            }
+            subject, _ = Subject.objects.update_or_create(
+                external_id=item.external_id, 
+                defaults=defaults,
+                create_defaults={**defaults, "created_by": request.user}
+            )
+            results.append(subject)
+    return results if is_list else results[0]
 
 
 @router.get("/subjects", response=list[SubjectSchemaOut])
@@ -267,22 +289,29 @@ def list_subjects(request):
 
 
 # L2: Form
-@router.post("/forms", response=FormSchemaOut)
-def sync_form(request, payload: FormSchemaIn):
-    study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "study": study, 
-        "name": payload.name,
-        "updated_by": request.user
-    }
-    form, _ = Form.objects.update_or_create(
-        external_id=payload.external_id, 
-        defaults=defaults,
-        create_defaults={**defaults, "created_by": request.user}
-    )
-    return form
+@router.post("/forms", response=list[FormSchemaOut] | FormSchemaOut)
+def sync_form(request, payload: list[FormSchemaIn] | FormSchemaIn):
+    """Synchronizes data. This endpoint is transactional; if a batch is provided and one fails, the entire batch is rolled back."""
+    is_list = isinstance(payload, list)
+    items = payload if is_list else [payload]
+    results = []
+    with transaction.atomic():
+        for item in items:
+            study = get_object_or_404(get_accessible_studies(request.user), external_id=item.study_ext_id)
+            defaults = {
+                "clinical_timestamp": item.clinical_timestamp, 
+                "source_sequence": item.source_sequence, 
+                "study": study, 
+                "name": item.name,
+                "updated_by": request.user
+            }
+            form, _ = Form.objects.update_or_create(
+                external_id=item.external_id, 
+                defaults=defaults,
+                create_defaults={**defaults, "created_by": request.user}
+            )
+            results.append(form)
+    return results if is_list else results[0]
 
 
 @router.get("/forms", response=list[FormSchemaOut])
@@ -291,22 +320,29 @@ def list_forms(request):
 
 
 # L2: Interval
-@router.post("/intervals", response=IntervalSchemaOut)
-def sync_interval(request, payload: IntervalSchemaIn):
-    study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "study": study, 
-        "name": payload.name,
-        "updated_by": request.user
-    }
-    interval, _ = Interval.objects.update_or_create(
-        external_id=payload.external_id, 
-        defaults=defaults,
-        create_defaults={**defaults, "created_by": request.user}
-    )
-    return interval
+@router.post("/intervals", response=list[IntervalSchemaOut] | IntervalSchemaOut)
+def sync_interval(request, payload: list[IntervalSchemaIn] | IntervalSchemaIn):
+    """Synchronizes data. This endpoint is transactional; if a batch is provided and one fails, the entire batch is rolled back."""
+    is_list = isinstance(payload, list)
+    items = payload if is_list else [payload]
+    results = []
+    with transaction.atomic():
+        for item in items:
+            study = get_object_or_404(get_accessible_studies(request.user), external_id=item.study_ext_id)
+            defaults = {
+                "clinical_timestamp": item.clinical_timestamp, 
+                "source_sequence": item.source_sequence, 
+                "study": study, 
+                "name": item.name,
+                "updated_by": request.user
+            }
+            interval, _ = Interval.objects.update_or_create(
+                external_id=item.external_id, 
+                defaults=defaults,
+                create_defaults={**defaults, "created_by": request.user}
+            )
+            results.append(interval)
+    return results if is_list else results[0]
 
 
 @router.get("/intervals", response=list[IntervalSchemaOut])
@@ -315,22 +351,29 @@ def list_intervals(request):
 
 
 # L3: Variable
-@router.post("/variables", response=VariableSchemaOut)
-def sync_variable(request, payload: VariableSchemaIn):
-    form = get_object_or_404(Form.objects.filter(study__in=get_accessible_studies(request.user)), external_id=payload.form_ext_id)
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "form": form, 
-        "name": payload.name,
-        "updated_by": request.user
-    }
-    variable, _ = Variable.objects.update_or_create(
-        external_id=payload.external_id, 
-        defaults=defaults,
-        create_defaults={**defaults, "created_by": request.user}
-    )
-    return variable
+@router.post("/variables", response=list[VariableSchemaOut] | VariableSchemaOut)
+def sync_variable(request, payload: list[VariableSchemaIn] | VariableSchemaIn):
+    """Synchronizes data. This endpoint is transactional; if a batch is provided and one fails, the entire batch is rolled back."""
+    is_list = isinstance(payload, list)
+    items = payload if is_list else [payload]
+    results = []
+    with transaction.atomic():
+        for item in items:
+            form = get_object_or_404(Form.objects.filter(study__in=get_accessible_studies(request.user)), external_id=item.form_ext_id)
+            defaults = {
+                "clinical_timestamp": item.clinical_timestamp, 
+                "source_sequence": item.source_sequence, 
+                "form": form, 
+                "name": item.name,
+                "updated_by": request.user
+            }
+            variable, _ = Variable.objects.update_or_create(
+                external_id=item.external_id, 
+                defaults=defaults,
+                create_defaults={**defaults, "created_by": request.user}
+            )
+            results.append(variable)
+    return results if is_list else results[0]
 
 
 @router.get("/variables", response=list[VariableSchemaOut])
@@ -339,23 +382,30 @@ def list_variables(request):
 
 
 # L3: Visit
-@router.post("/visits", response=VisitSchemaOut)
-def sync_visit(request, payload: VisitSchemaIn):
-    subject = get_object_or_404(get_accessible_subjects(request.user), external_id=payload.subject_ext_id)
-    interval = get_object_or_404(Interval.objects.filter(study__in=get_accessible_studies(request.user)), external_id=payload.interval_ext_id)
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "subject": subject, 
-        "interval": interval,
-        "updated_by": request.user
-    }
-    visit, _ = Visit.objects.update_or_create(
-        external_id=payload.external_id, 
-        defaults=defaults,
-        create_defaults={**defaults, "created_by": request.user}
-    )
-    return visit
+@router.post("/visits", response=list[VisitSchemaOut] | VisitSchemaOut)
+def sync_visit(request, payload: list[VisitSchemaIn] | VisitSchemaIn):
+    """Synchronizes data. This endpoint is transactional; if a batch is provided and one fails, the entire batch is rolled back."""
+    is_list = isinstance(payload, list)
+    items = payload if is_list else [payload]
+    results = []
+    with transaction.atomic():
+        for item in items:
+            subject = get_object_or_404(get_accessible_subjects(request.user), external_id=item.subject_ext_id)
+            interval = get_object_or_404(Interval.objects.filter(study__in=get_accessible_studies(request.user)), external_id=item.interval_ext_id)
+            defaults = {
+                "clinical_timestamp": item.clinical_timestamp, 
+                "source_sequence": item.source_sequence, 
+                "subject": subject, 
+                "interval": interval,
+                "updated_by": request.user
+            }
+            visit, _ = Visit.objects.update_or_create(
+                external_id=item.external_id, 
+                defaults=defaults,
+                create_defaults={**defaults, "created_by": request.user}
+            )
+            results.append(visit)
+    return results if is_list else results[0]
 
 
 @router.get("/visits", response=list[VisitSchemaOut])
@@ -364,24 +414,31 @@ def list_visits(request):
 
 
 # L4: Record
-@router.post("/records", response=RecordSchemaOut)
-def sync_record(request, payload: RecordSchemaIn):
-    visit = get_object_or_404(Visit.objects.filter(subject__in=get_accessible_subjects(request.user)), external_id=payload.visit_ext_id)
-    variable = get_object_or_404(Variable.objects.filter(form__study__in=get_accessible_studies(request.user)), external_id=payload.variable_ext_id)
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "visit": visit, 
-        "variable": variable, 
-        "value": payload.value,
-        "updated_by": request.user
-    }
-    record, _ = Record.objects.update_or_create(
-        external_id=payload.external_id, 
-        defaults=defaults,
-        create_defaults={**defaults, "created_by": request.user}
-    )
-    return record
+@router.post("/records", response=list[RecordSchemaOut] | RecordSchemaOut)
+def sync_record(request, payload: list[RecordSchemaIn] | RecordSchemaIn):
+    """Synchronizes data. This endpoint is transactional; if a batch is provided and one fails, the entire batch is rolled back."""
+    is_list = isinstance(payload, list)
+    items = payload if is_list else [payload]
+    results = []
+    with transaction.atomic():
+        for item in items:
+            visit = get_object_or_404(Visit.objects.filter(subject__in=get_accessible_subjects(request.user)), external_id=item.visit_ext_id)
+            variable = get_object_or_404(Variable.objects.filter(form__study__in=get_accessible_studies(request.user)), external_id=item.variable_ext_id)
+            defaults = {
+                "clinical_timestamp": item.clinical_timestamp, 
+                "source_sequence": item.source_sequence, 
+                "visit": visit, 
+                "variable": variable, 
+                "value": item.value,
+                "updated_by": request.user
+            }
+            record, _ = Record.objects.update_or_create(
+                external_id=item.external_id, 
+                defaults=defaults,
+                create_defaults={**defaults, "created_by": request.user}
+            )
+            results.append(record)
+    return results if is_list else results[0]
 
 
 @router.get("/records", response=list[RecordSchemaOut])
@@ -390,22 +447,29 @@ def list_records(request):
 
 
 # L4: Coding
-@router.post("/codings", response=CodingSchemaOut)
-def sync_coding(request, payload: CodingSchemaIn):
-    record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "record": record, 
-        "code": payload.code,
-        "updated_by": request.user
-    }
-    coding, _ = Coding.objects.update_or_create(
-        external_id=payload.external_id, 
-        defaults=defaults,
-        create_defaults={**defaults, "created_by": request.user}
-    )
-    return coding
+@router.post("/codings", response=list[CodingSchemaOut] | CodingSchemaOut)
+def sync_coding(request, payload: list[CodingSchemaIn] | CodingSchemaIn):
+    """Synchronizes data. This endpoint is transactional; if a batch is provided and one fails, the entire batch is rolled back."""
+    is_list = isinstance(payload, list)
+    items = payload if is_list else [payload]
+    results = []
+    with transaction.atomic():
+        for item in items:
+            record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=item.record_ext_id)
+            defaults = {
+                "clinical_timestamp": item.clinical_timestamp, 
+                "source_sequence": item.source_sequence, 
+                "record": record, 
+                "code": item.code,
+                "updated_by": request.user
+            }
+            coding, _ = Coding.objects.update_or_create(
+                external_id=item.external_id, 
+                defaults=defaults,
+                create_defaults={**defaults, "created_by": request.user}
+            )
+            results.append(coding)
+    return results if is_list else results[0]
 
 
 @router.get("/codings", response=list[CodingSchemaOut])
@@ -414,22 +478,29 @@ def list_codings(request):
 
 
 # L4: Query
-@router.post("/queries", response=QuerySchemaOut)
-def sync_query(request, payload: QuerySchemaIn):
-    record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "record": record, 
-        "text": payload.text,
-        "updated_by": request.user
-    }
-    query, _ = Query.objects.update_or_create(
-        external_id=payload.external_id, 
-        defaults=defaults,
-        create_defaults={**defaults, "created_by": request.user}
-    )
-    return query
+@router.post("/queries", response=list[QuerySchemaOut] | QuerySchemaOut)
+def sync_query(request, payload: list[QuerySchemaIn] | QuerySchemaIn):
+    """Synchronizes data. This endpoint is transactional; if a batch is provided and one fails, the entire batch is rolled back."""
+    is_list = isinstance(payload, list)
+    items = payload if is_list else [payload]
+    results = []
+    with transaction.atomic():
+        for item in items:
+            record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=item.record_ext_id)
+            defaults = {
+                "clinical_timestamp": item.clinical_timestamp, 
+                "source_sequence": item.source_sequence, 
+                "record": record, 
+                "text": item.text,
+                "updated_by": request.user
+            }
+            query, _ = Query.objects.update_or_create(
+                external_id=item.external_id, 
+                defaults=defaults,
+                create_defaults={**defaults, "created_by": request.user}
+            )
+            results.append(query)
+    return results if is_list else results[0]
 
 
 @router.get("/queries", response=list[QuerySchemaOut])
@@ -438,22 +509,29 @@ def list_queries(request):
 
 
 # L4: RecordRevision
-@router.post("/revisions", response=RecordRevisionSchemaOut)
-def sync_revision(request, payload: RecordRevisionSchemaIn):
-    record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "record": record, 
-        "value": payload.value,
-        "updated_by": request.user
-    }
-    revision, _ = RecordRevision.objects.update_or_create(
-        external_id=payload.external_id, 
-        defaults=defaults,
-        create_defaults={**defaults, "created_by": request.user}
-    )
-    return revision
+@router.post("/revisions", response=list[RecordRevisionSchemaOut] | RecordRevisionSchemaOut)
+def sync_revision(request, payload: list[RecordRevisionSchemaIn] | RecordRevisionSchemaIn):
+    """Synchronizes data. This endpoint is transactional; if a batch is provided and one fails, the entire batch is rolled back."""
+    is_list = isinstance(payload, list)
+    items = payload if is_list else [payload]
+    results = []
+    with transaction.atomic():
+        for item in items:
+            record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=item.record_ext_id)
+            defaults = {
+                "clinical_timestamp": item.clinical_timestamp, 
+                "source_sequence": item.source_sequence, 
+                "record": record, 
+                "value": item.value,
+                "updated_by": request.user
+            }
+            revision, _ = RecordRevision.objects.update_or_create(
+                external_id=item.external_id, 
+                defaults=defaults,
+                create_defaults={**defaults, "created_by": request.user}
+            )
+            results.append(revision)
+    return results if is_list else results[0]
 
 
 @router.get("/revisions", response=list[RecordRevisionSchemaOut])

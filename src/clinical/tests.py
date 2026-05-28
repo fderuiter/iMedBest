@@ -153,3 +153,32 @@ def test_longitudinal_reconstruction(client):
     assert rows[0]["VSSEQ"] == "1"
     assert rows[1]["VSORRES"] == "90"
     assert rows[1]["VSSEQ"] == "2"
+import pytest
+from clinical.models import Record, Visit, Variable, Form, Interval, Subject, Site, Study
+from django.test import Client
+
+@pytest.mark.django_db
+def test_atomic_rollback(client, mock_auth):
+    # setup valid hierarchy
+    client.post("/api/clinical/studies", data={"external_id": "study-a", "name": "Study A"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    client.post("/api/clinical/sites", data={"external_id": "site-a", "study_ext_id": "study-a", "name": "Site A"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    client.post("/api/clinical/subjects", data={"external_id": "sub-a", "site_ext_id": "site-a", "name": "Subject A"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    client.post("/api/clinical/intervals", data={"external_id": "int-a", "study_ext_id": "study-a", "name": "Interval A"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    client.post("/api/clinical/forms", data={"external_id": "form-a", "study_ext_id": "study-a", "name": "Form A"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    client.post("/api/clinical/variables", data={"external_id": "var-a", "form_ext_id": "form-a", "name": "Variable A"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    client.post("/api/clinical/visits", data={"external_id": "visit-a", "subject_ext_id": "sub-a", "interval_ext_id": "int-a"}, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    
+    # Send a list of records: 1 valid, 1 invalid (bad visit_ext_id)
+    payload = [
+        {"external_id": "rec-valid", "visit_ext_id": "visit-a", "variable_ext_id": "var-a", "value": "123"},
+        {"external_id": "rec-invalid", "visit_ext_id": "bad-visit", "variable_ext_id": "var-a", "value": "456"}
+    ]
+    resp = client.post("/api/clinical/records", data=payload, content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token")
+    
+    # Should fail due to 404 on the second one
+    assert resp.status_code == 404
+    
+    # Check that neither was saved
+    assert not Record.objects.filter(external_id="rec-valid").exists()
+    assert not Record.objects.filter(external_id="rec-invalid").exists()
+

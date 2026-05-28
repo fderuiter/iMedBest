@@ -29,3 +29,5 @@ staticfiles/
 # IDE/editor
 .vscode/
 .idea/
+archives/
+backups/

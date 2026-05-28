@@ -1,5 +1,7 @@
 from django.core.management.base import BaseCommand
-from clinical.models import Subject, Visit, Record, Coding, Query, RecordRevision
+
+from clinical.models import Coding, Query, Record, RecordRevision, Subject, Visit
+
 
 class Command(BaseCommand):
     help = "Reconstruct longitudinal data for legacy records and recalculate offsets based on updated baseline."
@@ -7,7 +9,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         # The backfilling should estimate clinical_timestamp from created_at if missing
         self.stdout.write("Backfilling missing clinical_timestamps with created_at...")
-        from clinical.models import Study, Site, Form, Interval, Variable
+        from clinical.models import Form, Interval, Site, Study, Variable
         for model in [Study, Site, Subject, Form, Interval, Variable, Visit, Record, Coding, Query, RecordRevision]:
             records_to_update = []
             for obj in model.objects.filter(clinical_timestamp__isnull=True):
@@ -17,10 +19,10 @@ class Command(BaseCommand):
                 model.objects.bulk_update(records_to_update, ['clinical_timestamp'])
 
         self.stdout.write("Recalculating offsets...")
-        # Since offset_days depends on the subject's baseline, and a subject's baseline depends on Visit, 
+        # Since offset_days depends on the subject's baseline, and a subject's baseline depends on Visit,
         # we can just loop through all entities that have a subject and call save() to recalculate.
         # However, save() might be slow for bulk. Let's use bulk update if possible.
-        
+
         subjects = Subject.objects.all()
         baseline_cache = {}
         for subject in subjects:
@@ -40,7 +42,7 @@ class Command(BaseCommand):
                     pass
             if records_to_update:
                 model.objects.bulk_update(records_to_update, ['offset_days'])
-                
+
         # Update sequences (e.g. source_sequence) if not set.
         # We can just leave them if they are not set, or backfill them sequentially.
         # For VS (Record), order by clinical_timestamp then set source_sequence

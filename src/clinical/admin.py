@@ -1,5 +1,7 @@
 from django.contrib import admin
+
 from .models import SyncJob, SyncTask
+
 
 @admin.register(SyncJob)
 class SyncJobAdmin(admin.ModelAdmin):

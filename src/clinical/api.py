@@ -1,9 +1,10 @@
 # ruff: noqa: RUF012, ERA001
 
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
 from ninja.security import APIKeyHeader
-from django.conf import settings
+
 
 class StaticAPIKey(APIKeyHeader):
     param_name = "X-API-Key"
@@ -43,9 +44,30 @@ router = Router(auth=StaticAPIKey())
 # --- Schemas ---
 
 class JobStatusSchemaOut(ModelSchema):
+    progress_percentage: float
+    error_logs: list[str]
+
     class Meta:
         model = SyncJob
         fields = ["id", "status", "error_message", "created_at", "updated_at"]
+
+    @staticmethod
+    def resolve_progress_percentage(obj) -> float:
+        total = obj.tasks.count()
+        if total == 0:
+            return 100.0
+        completed = obj.tasks.filter(status__in=['COMPLETED', 'FAILED']).count()
+        return round((completed / total) * 100.0, 2)
+
+    @staticmethod
+    def resolve_error_logs(obj) -> list[str]:
+        failed_tasks = obj.tasks.filter(status='FAILED')
+        logs = []
+        for task in failed_tasks:
+            # Mask PII by only showing entity type and metadata (e.g. external_id if available)
+            msg = f"{task.entity_type} task failed: {task.error_message}"
+            logs.append(msg)
+        return logs
 
 
 

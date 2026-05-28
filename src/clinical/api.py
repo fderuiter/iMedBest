@@ -22,7 +22,7 @@ class StudySchemaIn(ModelSchema):
 class StudySchemaOut(ModelSchema):
     class Meta:
         model = Study
-        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "created_at", "updated_at", "created_by", "updated_by"]
 
 
 class SiteSchemaIn(ModelSchema):
@@ -36,7 +36,7 @@ class SiteSchemaIn(ModelSchema):
 class SiteSchemaOut(ModelSchema):
     class Meta:
         model = Site
-        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "study", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "study", "created_at", "updated_at", "created_by", "updated_by"]
 
 
 class SubjectSchemaIn(ModelSchema):
@@ -50,7 +50,7 @@ class SubjectSchemaIn(ModelSchema):
 class SubjectSchemaOut(ModelSchema):
     class Meta:
         model = Subject
-        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "site", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "site", "created_at", "updated_at", "created_by", "updated_by"]
 
 
 class FormSchemaIn(ModelSchema):
@@ -64,7 +64,7 @@ class FormSchemaIn(ModelSchema):
 class FormSchemaOut(ModelSchema):
     class Meta:
         model = Form
-        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "study", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "study", "created_at", "updated_at", "created_by", "updated_by"]
 
 
 class IntervalSchemaIn(ModelSchema):
@@ -78,7 +78,7 @@ class IntervalSchemaIn(ModelSchema):
 class IntervalSchemaOut(ModelSchema):
     class Meta:
         model = Interval
-        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "study", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "study", "created_at", "updated_at", "created_by", "updated_by"]
 
 
 class VariableSchemaIn(ModelSchema):
@@ -92,7 +92,7 @@ class VariableSchemaIn(ModelSchema):
 class VariableSchemaOut(ModelSchema):
     class Meta:
         model = Variable
-        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "form", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "name", "form", "created_at", "updated_at", "created_by", "updated_by"]
 
 
 class VisitSchemaIn(ModelSchema):
@@ -107,7 +107,7 @@ class VisitSchemaIn(ModelSchema):
 class VisitSchemaOut(ModelSchema):
     class Meta:
         model = Visit
-        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "subject", "interval", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "subject", "interval", "created_at", "updated_at", "created_by", "updated_by"]
 
 
 class RecordSchemaIn(ModelSchema):
@@ -122,7 +122,7 @@ class RecordSchemaIn(ModelSchema):
 class RecordSchemaOut(ModelSchema):
     class Meta:
         model = Record
-        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "value", "visit", "variable", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "value", "visit", "variable", "created_at", "updated_at", "created_by", "updated_by"]
 
 
 class CodingSchemaIn(ModelSchema):
@@ -136,7 +136,7 @@ class CodingSchemaIn(ModelSchema):
 class CodingSchemaOut(ModelSchema):
     class Meta:
         model = Coding
-        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "code", "record", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "code", "record", "created_at", "updated_at", "created_by", "updated_by"]
 
 
 class QuerySchemaIn(ModelSchema):
@@ -150,7 +150,7 @@ class QuerySchemaIn(ModelSchema):
 class QuerySchemaOut(ModelSchema):
     class Meta:
         model = Query
-        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "text", "record", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "text", "record", "created_at", "updated_at", "created_by", "updated_by"]
 
 
 class RecordRevisionSchemaIn(ModelSchema):
@@ -164,8 +164,34 @@ class RecordRevisionSchemaIn(ModelSchema):
 class RecordRevisionSchemaOut(ModelSchema):
     class Meta:
         model = RecordRevision
-        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "value", "record", "created_at", "updated_at"]
+        fields = ["clinical_timestamp", "source_sequence", "offset_days", "id", "external_id", "value", "record", "created_at", "updated_at", "created_by", "updated_by"]
 
+
+from django.db.models import Q
+
+def get_accessible_studies(user):
+    from users.models import SiteMembership, StudyMembership
+    if user.is_staff or user.is_superuser:
+        return Study.objects.all()
+    auditor_study_ids = StudyMembership.objects.filter(user=user, role='clinical_auditor').values_list('study_id', flat=True)
+    investigator_study_ids = SiteMembership.objects.filter(user=user, role='site_investigator').values_list('site__study_id', flat=True)
+    return Study.objects.filter(Q(id__in=auditor_study_ids) | Q(id__in=investigator_study_ids))
+
+def get_accessible_sites(user):
+    from users.models import SiteMembership, StudyMembership
+    if user.is_staff or user.is_superuser:
+        return Site.objects.all()
+    auditor_study_ids = StudyMembership.objects.filter(user=user, role='clinical_auditor').values_list('study_id', flat=True)
+    investigator_site_ids = SiteMembership.objects.filter(user=user, role='site_investigator').values_list('site_id', flat=True)
+    return Site.objects.filter(Q(study_id__in=auditor_study_ids) | Q(id__in=investigator_site_ids))
+
+def get_accessible_subjects(user):
+    from users.models import SiteMembership, StudyMembership
+    if user.is_staff or user.is_superuser:
+        return Subject.objects.all()
+    auditor_study_ids = StudyMembership.objects.filter(user=user, role='clinical_auditor').values_list('study_id', flat=True)
+    investigator_site_ids = SiteMembership.objects.filter(user=user, role='site_investigator').values_list('site_id', flat=True)
+    return Subject.objects.filter(Q(site__study_id__in=auditor_study_ids) | Q(site_id__in=investigator_site_ids))
 
 # --- Endpoints ---
 
@@ -173,165 +199,266 @@ class RecordRevisionSchemaOut(ModelSchema):
 # L1: Study
 @router.post("/studies", response=StudySchemaOut)
 def sync_study(request, payload: StudySchemaIn):
-    study, _ = Study.objects.update_or_create(external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "name": payload.name})
+    defaults = {
+        "clinical_timestamp": payload.clinical_timestamp, 
+        "source_sequence": payload.source_sequence, 
+        "name": payload.name,
+        "updated_by": request.user
+    }
+    study, _ = Study.objects.update_or_create(
+        external_id=payload.external_id, 
+        defaults=defaults,
+        create_defaults={**defaults, "created_by": request.user}
+    )
     return study
 
 
 @router.get("/studies", response=list[StudySchemaOut])
 def list_studies(request):
-    return Study.objects.all()
+    return get_accessible_studies(request.user)
 
 
 # L1: Site
 @router.post("/sites", response=SiteSchemaOut)
 def sync_site(request, payload: SiteSchemaIn):
-    study = get_object_or_404(Study, external_id=payload.study_ext_id)
+    study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
+    defaults = {
+        "clinical_timestamp": payload.clinical_timestamp, 
+        "source_sequence": payload.source_sequence, 
+        "study": study, 
+        "name": payload.name,
+        "updated_by": request.user
+    }
     site, _ = Site.objects.update_or_create(
-        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "study": study, "name": payload.name}
+        external_id=payload.external_id, 
+        defaults=defaults,
+        create_defaults={**defaults, "created_by": request.user}
     )
     return site
 
 
 @router.get("/sites", response=list[SiteSchemaOut])
 def list_sites(request):
-    return Site.objects.select_related("study").all()
+    return get_accessible_sites(request.user).select_related("study")
 
 
 # L2: Subject
 @router.post("/subjects", response=SubjectSchemaOut)
 def sync_subject(request, payload: SubjectSchemaIn):
-    site = get_object_or_404(Site, external_id=payload.site_ext_id)
+    site = get_object_or_404(get_accessible_sites(request.user), external_id=payload.site_ext_id)
+    defaults = {
+        "clinical_timestamp": payload.clinical_timestamp, 
+        "source_sequence": payload.source_sequence, 
+        "site": site, 
+        "name": payload.name,
+        "updated_by": request.user
+    }
     subject, _ = Subject.objects.update_or_create(
-        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "site": site, "name": payload.name}
+        external_id=payload.external_id, 
+        defaults=defaults,
+        create_defaults={**defaults, "created_by": request.user}
     )
     return subject
 
 
 @router.get("/subjects", response=list[SubjectSchemaOut])
 def list_subjects(request):
-    return Subject.objects.select_related("site").all()
+    return get_accessible_subjects(request.user).select_related("site")
 
 
 # L2: Form
 @router.post("/forms", response=FormSchemaOut)
 def sync_form(request, payload: FormSchemaIn):
-    study = get_object_or_404(Study, external_id=payload.study_ext_id)
+    study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
+    defaults = {
+        "clinical_timestamp": payload.clinical_timestamp, 
+        "source_sequence": payload.source_sequence, 
+        "study": study, 
+        "name": payload.name,
+        "updated_by": request.user
+    }
     form, _ = Form.objects.update_or_create(
-        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "study": study, "name": payload.name}
+        external_id=payload.external_id, 
+        defaults=defaults,
+        create_defaults={**defaults, "created_by": request.user}
     )
     return form
 
 
 @router.get("/forms", response=list[FormSchemaOut])
 def list_forms(request):
-    return Form.objects.select_related("study").all()
+    return Form.objects.filter(study__in=get_accessible_studies(request.user)).select_related("study")
 
 
 # L2: Interval
 @router.post("/intervals", response=IntervalSchemaOut)
 def sync_interval(request, payload: IntervalSchemaIn):
-    study = get_object_or_404(Study, external_id=payload.study_ext_id)
+    study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
+    defaults = {
+        "clinical_timestamp": payload.clinical_timestamp, 
+        "source_sequence": payload.source_sequence, 
+        "study": study, 
+        "name": payload.name,
+        "updated_by": request.user
+    }
     interval, _ = Interval.objects.update_or_create(
-        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "study": study, "name": payload.name}
+        external_id=payload.external_id, 
+        defaults=defaults,
+        create_defaults={**defaults, "created_by": request.user}
     )
     return interval
 
 
 @router.get("/intervals", response=list[IntervalSchemaOut])
 def list_intervals(request):
-    return Interval.objects.select_related("study").all()
+    return Interval.objects.filter(study__in=get_accessible_studies(request.user)).select_related("study")
 
 
 # L3: Variable
 @router.post("/variables", response=VariableSchemaOut)
 def sync_variable(request, payload: VariableSchemaIn):
-    form = get_object_or_404(Form, external_id=payload.form_ext_id)
+    form = get_object_or_404(Form.objects.filter(study__in=get_accessible_studies(request.user)), external_id=payload.form_ext_id)
+    defaults = {
+        "clinical_timestamp": payload.clinical_timestamp, 
+        "source_sequence": payload.source_sequence, 
+        "form": form, 
+        "name": payload.name,
+        "updated_by": request.user
+    }
     variable, _ = Variable.objects.update_or_create(
-        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "form": form, "name": payload.name}
+        external_id=payload.external_id, 
+        defaults=defaults,
+        create_defaults={**defaults, "created_by": request.user}
     )
     return variable
 
 
 @router.get("/variables", response=list[VariableSchemaOut])
 def list_variables(request):
-    return Variable.objects.select_related("form").all()
+    return Variable.objects.filter(form__study__in=get_accessible_studies(request.user)).select_related("form")
 
 
 # L3: Visit
 @router.post("/visits", response=VisitSchemaOut)
 def sync_visit(request, payload: VisitSchemaIn):
-    subject = get_object_or_404(Subject, external_id=payload.subject_ext_id)
-    interval = get_object_or_404(Interval, external_id=payload.interval_ext_id)
+    subject = get_object_or_404(get_accessible_subjects(request.user), external_id=payload.subject_ext_id)
+    interval = get_object_or_404(Interval.objects.filter(study__in=get_accessible_studies(request.user)), external_id=payload.interval_ext_id)
+    defaults = {
+        "clinical_timestamp": payload.clinical_timestamp, 
+        "source_sequence": payload.source_sequence, 
+        "subject": subject, 
+        "interval": interval,
+        "updated_by": request.user
+    }
     visit, _ = Visit.objects.update_or_create(
-        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "subject": subject, "interval": interval}
+        external_id=payload.external_id, 
+        defaults=defaults,
+        create_defaults={**defaults, "created_by": request.user}
     )
     return visit
 
 
 @router.get("/visits", response=list[VisitSchemaOut])
 def list_visits(request):
-    return Visit.objects.select_related("subject", "interval").all()
+    return Visit.objects.filter(subject__in=get_accessible_subjects(request.user)).select_related("subject", "interval")
 
 
 # L4: Record
 @router.post("/records", response=RecordSchemaOut)
 def sync_record(request, payload: RecordSchemaIn):
-    visit = get_object_or_404(Visit, external_id=payload.visit_ext_id)
-    variable = get_object_or_404(Variable, external_id=payload.variable_ext_id)
+    visit = get_object_or_404(Visit.objects.filter(subject__in=get_accessible_subjects(request.user)), external_id=payload.visit_ext_id)
+    variable = get_object_or_404(Variable.objects.filter(form__study__in=get_accessible_studies(request.user)), external_id=payload.variable_ext_id)
+    defaults = {
+        "clinical_timestamp": payload.clinical_timestamp, 
+        "source_sequence": payload.source_sequence, 
+        "visit": visit, 
+        "variable": variable, 
+        "value": payload.value,
+        "updated_by": request.user
+    }
     record, _ = Record.objects.update_or_create(
-        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "visit": visit, "variable": variable, "value": payload.value}
+        external_id=payload.external_id, 
+        defaults=defaults,
+        create_defaults={**defaults, "created_by": request.user}
     )
     return record
 
 
 @router.get("/records", response=list[RecordSchemaOut])
 def list_records(request):
-    return Record.objects.select_related("visit", "variable").all()
+    return Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)).select_related("visit", "variable")
 
 
 # L4: Coding
 @router.post("/codings", response=CodingSchemaOut)
 def sync_coding(request, payload: CodingSchemaIn):
-    record = get_object_or_404(Record, external_id=payload.record_ext_id)
+    record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
+    defaults = {
+        "clinical_timestamp": payload.clinical_timestamp, 
+        "source_sequence": payload.source_sequence, 
+        "record": record, 
+        "code": payload.code,
+        "updated_by": request.user
+    }
     coding, _ = Coding.objects.update_or_create(
-        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "record": record, "code": payload.code}
+        external_id=payload.external_id, 
+        defaults=defaults,
+        create_defaults={**defaults, "created_by": request.user}
     )
     return coding
 
 
 @router.get("/codings", response=list[CodingSchemaOut])
 def list_codings(request):
-    return Coding.objects.select_related("record").all()
+    return Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request.user)).select_related("record")
 
 
 # L4: Query
 @router.post("/queries", response=QuerySchemaOut)
 def sync_query(request, payload: QuerySchemaIn):
-    record = get_object_or_404(Record, external_id=payload.record_ext_id)
+    record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
+    defaults = {
+        "clinical_timestamp": payload.clinical_timestamp, 
+        "source_sequence": payload.source_sequence, 
+        "record": record, 
+        "text": payload.text,
+        "updated_by": request.user
+    }
     query, _ = Query.objects.update_or_create(
-        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "record": record, "text": payload.text}
+        external_id=payload.external_id, 
+        defaults=defaults,
+        create_defaults={**defaults, "created_by": request.user}
     )
     return query
 
 
 @router.get("/queries", response=list[QuerySchemaOut])
 def list_queries(request):
-    return Query.objects.select_related("record").all()
+    return Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request.user)).select_related("record")
 
 
 # L4: RecordRevision
 @router.post("/revisions", response=RecordRevisionSchemaOut)
 def sync_revision(request, payload: RecordRevisionSchemaIn):
-    record = get_object_or_404(Record, external_id=payload.record_ext_id)
+    record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
+    defaults = {
+        "clinical_timestamp": payload.clinical_timestamp, 
+        "source_sequence": payload.source_sequence, 
+        "record": record, 
+        "value": payload.value,
+        "updated_by": request.user
+    }
     revision, _ = RecordRevision.objects.update_or_create(
-        external_id=payload.external_id, defaults={"clinical_timestamp": payload.clinical_timestamp, "source_sequence": payload.source_sequence, "record": record, "value": payload.value}
+        external_id=payload.external_id, 
+        defaults=defaults,
+        create_defaults={**defaults, "created_by": request.user}
     )
     return revision
 
 
 @router.get("/revisions", response=list[RecordRevisionSchemaOut])
 def list_revisions(request):
-    return RecordRevision.objects.select_related("record").all()
+    return RecordRevision.objects.filter(record__visit__subject__in=get_accessible_subjects(request.user)).select_related("record")
 
 
 

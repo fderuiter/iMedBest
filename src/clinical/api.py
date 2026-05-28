@@ -6,11 +6,33 @@ from ninja import ModelSchema, Router
 from users.auth import OIDCBearer
 
 from .export import generate_cdisc_export
-from .models import Coding, Form, Interval, Query, Record, RecordRevision, Site, Study, Subject, Variable, Visit
+from .models import (
+    Coding,
+    Form,
+    Interval,
+    Query,
+    Record,
+    RecordRevision,
+    Site,
+    Study,
+    Subject,
+    SyncJob,
+    SyncTask,
+    Variable,
+    Visit,
+)
+from .schemas import SyncJobRequest, SyncJobResponse
+from .tasks import orchestrate_sync_job
 
 router = Router(auth=OIDCBearer())
 
 # --- Schemas ---
+
+class JobStatusSchemaOut(ModelSchema):
+    class Meta:
+        model = SyncJob
+        fields = ["id", "status", "error_message", "created_at", "updated_at"]
+
 
 
 class StudySchemaIn(ModelSchema):
@@ -169,6 +191,7 @@ class RecordRevisionSchemaOut(ModelSchema):
 
 from django.db.models import Q
 
+
 def get_accessible_studies(user):
     from users.models import SiteMembership, StudyMembership
     if user.is_staff or user.is_superuser:
@@ -195,18 +218,46 @@ def get_accessible_subjects(user):
 
 # --- Endpoints ---
 
+@router.post("/sync-jobs", response={202: SyncJobResponse})
+def create_sync_job(request, payload: SyncJobRequest):
+    job = SyncJob.objects.create(
+        user=request.user,
+        status='PENDING'
+    )
+
+    # Create tasks
+    task_objects = []
+    for entity in payload.entities:
+        task_objects.append(SyncTask(
+            job=job,
+            hierarchy_level=entity.hierarchy_level,
+            entity_type=entity.entity_type,
+            payload=entity.payload,
+            status='PENDING'
+        ))
+
+    SyncTask.objects.bulk_create(task_objects)
+
+    # Start orchestration
+    orchestrate_sync_job.delay(job.id, request.user.id)
+
+    return 202, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued")
+
+@router.get("/sync-jobs/{job_id}", response=JobStatusSchemaOut)
+def get_sync_job(request, job_id: str):
+    return get_object_or_404(SyncJob, id=job_id, user=request.user)
 
 # L1: Study
 @router.post("/studies", response=StudySchemaOut)
 def sync_study(request, payload: StudySchemaIn):
     defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
+        "clinical_timestamp": payload.clinical_timestamp,
+        "source_sequence": payload.source_sequence,
         "name": payload.name,
         "updated_by": request.user
     }
     study, _ = Study.objects.update_or_create(
-        external_id=payload.external_id, 
+        external_id=payload.external_id,
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
@@ -223,14 +274,14 @@ def list_studies(request):
 def sync_site(request, payload: SiteSchemaIn):
     study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
     defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "study": study, 
+        "clinical_timestamp": payload.clinical_timestamp,
+        "source_sequence": payload.source_sequence,
+        "study": study,
         "name": payload.name,
         "updated_by": request.user
     }
     site, _ = Site.objects.update_or_create(
-        external_id=payload.external_id, 
+        external_id=payload.external_id,
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
@@ -247,14 +298,14 @@ def list_sites(request):
 def sync_subject(request, payload: SubjectSchemaIn):
     site = get_object_or_404(get_accessible_sites(request.user), external_id=payload.site_ext_id)
     defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "site": site, 
+        "clinical_timestamp": payload.clinical_timestamp,
+        "source_sequence": payload.source_sequence,
+        "site": site,
         "name": payload.name,
         "updated_by": request.user
     }
     subject, _ = Subject.objects.update_or_create(
-        external_id=payload.external_id, 
+        external_id=payload.external_id,
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
@@ -271,14 +322,14 @@ def list_subjects(request):
 def sync_form(request, payload: FormSchemaIn):
     study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
     defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "study": study, 
+        "clinical_timestamp": payload.clinical_timestamp,
+        "source_sequence": payload.source_sequence,
+        "study": study,
         "name": payload.name,
         "updated_by": request.user
     }
     form, _ = Form.objects.update_or_create(
-        external_id=payload.external_id, 
+        external_id=payload.external_id,
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
@@ -295,14 +346,14 @@ def list_forms(request):
 def sync_interval(request, payload: IntervalSchemaIn):
     study = get_object_or_404(get_accessible_studies(request.user), external_id=payload.study_ext_id)
     defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "study": study, 
+        "clinical_timestamp": payload.clinical_timestamp,
+        "source_sequence": payload.source_sequence,
+        "study": study,
         "name": payload.name,
         "updated_by": request.user
     }
     interval, _ = Interval.objects.update_or_create(
-        external_id=payload.external_id, 
+        external_id=payload.external_id,
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
@@ -319,14 +370,14 @@ def list_intervals(request):
 def sync_variable(request, payload: VariableSchemaIn):
     form = get_object_or_404(Form.objects.filter(study__in=get_accessible_studies(request.user)), external_id=payload.form_ext_id)
     defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "form": form, 
+        "clinical_timestamp": payload.clinical_timestamp,
+        "source_sequence": payload.source_sequence,
+        "form": form,
         "name": payload.name,
         "updated_by": request.user
     }
     variable, _ = Variable.objects.update_or_create(
-        external_id=payload.external_id, 
+        external_id=payload.external_id,
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
@@ -344,14 +395,14 @@ def sync_visit(request, payload: VisitSchemaIn):
     subject = get_object_or_404(get_accessible_subjects(request.user), external_id=payload.subject_ext_id)
     interval = get_object_or_404(Interval.objects.filter(study__in=get_accessible_studies(request.user)), external_id=payload.interval_ext_id)
     defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "subject": subject, 
+        "clinical_timestamp": payload.clinical_timestamp,
+        "source_sequence": payload.source_sequence,
+        "subject": subject,
         "interval": interval,
         "updated_by": request.user
     }
     visit, _ = Visit.objects.update_or_create(
-        external_id=payload.external_id, 
+        external_id=payload.external_id,
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
@@ -369,15 +420,15 @@ def sync_record(request, payload: RecordSchemaIn):
     visit = get_object_or_404(Visit.objects.filter(subject__in=get_accessible_subjects(request.user)), external_id=payload.visit_ext_id)
     variable = get_object_or_404(Variable.objects.filter(form__study__in=get_accessible_studies(request.user)), external_id=payload.variable_ext_id)
     defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "visit": visit, 
-        "variable": variable, 
+        "clinical_timestamp": payload.clinical_timestamp,
+        "source_sequence": payload.source_sequence,
+        "visit": visit,
+        "variable": variable,
         "value": payload.value,
         "updated_by": request.user
     }
     record, _ = Record.objects.update_or_create(
-        external_id=payload.external_id, 
+        external_id=payload.external_id,
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
@@ -394,14 +445,14 @@ def list_records(request):
 def sync_coding(request, payload: CodingSchemaIn):
     record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
     defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "record": record, 
+        "clinical_timestamp": payload.clinical_timestamp,
+        "source_sequence": payload.source_sequence,
+        "record": record,
         "code": payload.code,
         "updated_by": request.user
     }
     coding, _ = Coding.objects.update_or_create(
-        external_id=payload.external_id, 
+        external_id=payload.external_id,
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
@@ -418,14 +469,14 @@ def list_codings(request):
 def sync_query(request, payload: QuerySchemaIn):
     record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
     defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "record": record, 
+        "clinical_timestamp": payload.clinical_timestamp,
+        "source_sequence": payload.source_sequence,
+        "record": record,
         "text": payload.text,
         "updated_by": request.user
     }
     query, _ = Query.objects.update_or_create(
-        external_id=payload.external_id, 
+        external_id=payload.external_id,
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )
@@ -442,14 +493,14 @@ def list_queries(request):
 def sync_revision(request, payload: RecordRevisionSchemaIn):
     record = get_object_or_404(Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)), external_id=payload.record_ext_id)
     defaults = {
-        "clinical_timestamp": payload.clinical_timestamp, 
-        "source_sequence": payload.source_sequence, 
-        "record": record, 
+        "clinical_timestamp": payload.clinical_timestamp,
+        "source_sequence": payload.source_sequence,
+        "record": record,
         "value": payload.value,
         "updated_by": request.user
     }
     revision, _ = RecordRevision.objects.update_or_create(
-        external_id=payload.external_id, 
+        external_id=payload.external_id,
         defaults=defaults,
         create_defaults={**defaults, "created_by": request.user}
     )

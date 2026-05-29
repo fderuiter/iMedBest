@@ -8,13 +8,15 @@ from .middleware import get_current_request
 from .models import AuditLog
 from .tasks import create_audit_log_task
 
-EXCLUDED_MODELS = ['AuditLog', 'Session', 'LogEntry', 'ContentType', 'Permission', 'Group', 'Revision', 'RecordRevision', 'Migration']
+EXCLUDED_MODELS = ["AuditLog", "Session", "LogEntry", "ContentType", "Permission", "Group", "Revision", "Migration"]
+
 
 def get_client_ip(request):
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
     if x_forwarded_for:
-        return x_forwarded_for.split(',')[0]
-    return request.META.get('REMOTE_ADDR')
+        return x_forwarded_for.split(",")[0]
+    return request.META.get("REMOTE_ADDR")
+
 
 def create_audit_log(action, instance, changes=None):
     model_name = instance.__class__.__name__
@@ -22,12 +24,12 @@ def create_audit_log(action, instance, changes=None):
         return
 
     request = get_current_request()
-    user = getattr(request, 'user', None) if request else None
+    user = getattr(request, "user", None) if request else None
     if user and not user.is_authenticated:
         user = None
 
     ip_address = get_client_ip(request) if request else None
-    user_agent = request.META.get('HTTP_USER_AGENT') if request else None
+    user_agent = request.META.get("HTTP_USER_AGENT") if request else None
 
     create_audit_log_task.delay(
         action=action,
@@ -36,23 +38,26 @@ def create_audit_log(action, instance, changes=None):
         changes=changes,
         user_id=user.pk if user else None,
         ip_address=ip_address,
-        user_agent=user_agent
+        user_agent=user_agent,
     )
+
 
 def safe_model_to_dict(instance):
     d = model_to_dict(instance)
     for k, v in d.items():
-        if v.__class__.__name__ == 'UUID':
+        if v.__class__.__name__ == "UUID":
             d[k] = str(v)
-        elif hasattr(v, 'pk'):
+        elif hasattr(v, "pk"):
             d[k] = str(v.pk)
-        elif hasattr(v, 'isoformat'):
+        elif hasattr(v, "isoformat"):
             d[k] = v.isoformat()
     return d
 
+
 @receiver(pre_save)
 def track_changes(sender, instance, **kwargs):
-    if kwargs.get('raw'): return
+    if kwargs.get("raw"):
+        return
     if sender.__name__ in EXCLUDED_MODELS:
         return
     if instance.pk:
@@ -64,52 +69,58 @@ def track_changes(sender, instance, **kwargs):
     else:
         instance._old_data = {}
 
+
 @receiver(post_save)
 def log_save(sender, instance, created, **kwargs):
-    if kwargs.get('raw'): return
+    if kwargs.get("raw"):
+        return
     if sender.__name__ in EXCLUDED_MODELS:
         return
-    action = 'CREATE' if created else 'UPDATE'
+    action = "CREATE" if created else "UPDATE"
 
     changes = {}
-    if not created and hasattr(instance, '_old_data'):
+    if not created and hasattr(instance, "_old_data"):
         new_data = safe_model_to_dict(instance)
         for key, value in new_data.items():
             old_value = instance._old_data.get(key)
             if str(old_value) != str(value):
-                changes[key] = {'old': str(old_value), 'new': str(value)}
+                changes[key] = {"old": str(old_value), "new": str(value)}
 
     create_audit_log(action, instance, changes if changes else None)
 
+
 @receiver(post_delete)
 def log_delete(sender, instance, **kwargs):
-    if kwargs.get('raw'): return
-    create_audit_log('DELETE', instance)
+    if kwargs.get("raw"):
+        return
+    create_audit_log("DELETE", instance)
+
 
 @receiver(user_logged_in)
 def log_login(sender, request, user, **kwargs):
     ip_address = get_client_ip(request) if request else None
-    user_agent = request.META.get('HTTP_USER_AGENT') if request else None
+    user_agent = request.META.get("HTTP_USER_AGENT") if request else None
     create_audit_log_task.delay(
-        action='LOGIN',
-        model_name='',
-        object_id='',
+        action="LOGIN",
+        model_name="",
+        object_id="",
         changes=None,
         user_id=user.pk if user else None,
         ip_address=ip_address,
-        user_agent=user_agent
+        user_agent=user_agent,
     )
+
 
 @receiver(user_logged_out)
 def log_logout(sender, request, user, **kwargs):
     ip_address = get_client_ip(request) if request else None
-    user_agent = request.META.get('HTTP_USER_AGENT') if request else None
+    user_agent = request.META.get("HTTP_USER_AGENT") if request else None
     create_audit_log_task.delay(
-        action='LOGOUT',
-        model_name='',
-        object_id='',
+        action="LOGOUT",
+        model_name="",
+        object_id="",
         changes=None,
         user_id=user.pk if user else None,
         ip_address=ip_address,
-        user_agent=user_agent
+        user_agent=user_agent,
     )

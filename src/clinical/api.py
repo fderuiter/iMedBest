@@ -312,6 +312,7 @@ class CodingSchemaOut(ModelSchema):
 
 from typing import Optional
 
+
 class QuerySchemaIn(ModelSchema):
     record_ext_id: str
     status: Optional[str] = "OPEN"
@@ -320,7 +321,9 @@ class QuerySchemaIn(ModelSchema):
         model = Query
         fields = ["clinical_timestamp", "source_sequence", "external_id", "text", "status"]
 
+
 from ninja import Schema
+
 
 class QueryUpdateIn(Schema):
     status: str
@@ -423,26 +426,45 @@ import json
 from django.core.exceptions import PermissionDenied
 
 
-def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_obj) -> tuple[int, SyncJobResponse]:
+from typing import Any
+
+
+def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_obj) -> tuple[int, Any]:
     if not (request.user.is_staff or request.user.is_superuser):
         from users.models import SiteMembership
 
         if not SiteMembership.objects.filter(user=request.user, role="site_investigator").exists():
             raise PermissionDenied("Clinical Auditors have read-only access.")
 
+    from django.db import transaction
+    from clinical.adapter import MultiVendorAdapter
+
     payload_dict = json.loads(payload_obj.json())
-    job = SyncJob.objects.create(user=request.user, provider=getattr(request, "provider", None), status="PENDING")
-    SyncTask.objects.create(
-        job=job, hierarchy_level=hierarchy_level, entity_type=entity_type, payload=payload_dict, status="PENDING"
-    )
-    status_url = f"/api/clinical/sync-jobs/{job.id}"
-    return 202, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
+    provider = getattr(request, "provider", None)
+    adapter = MultiVendorAdapter(provider)
+
+    try:
+        with transaction.atomic():
+            job = SyncJob.objects.create(user=request.user, provider=provider, status="COMPLETED")
+            SyncTask.objects.create(
+                job=job,
+                hierarchy_level=hierarchy_level,
+                entity_type=entity_type,
+                payload=payload_dict,
+                status="COMPLETED",
+            )
+            adapter.sync_entity(request, entity_type, payload_dict)
+
+        status_url = f"/api/clinical/sync-jobs/{job.id}"
+        return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync completed", status_url=status_url)
+    except Exception as e:
+        return 400, {"message": f"Sync failed. No data was saved. Error: {str(e)}"}
 
 
 # --- Endpoints ---
 
 
-@router.post("/sync-jobs", response={202: SyncJobResponse})
+@router.post("/sync-jobs", response={200: SyncJobResponse, 400: dict})
 def create_sync_job(request, payload: SyncJobRequest):
     if not (request.user.is_staff or request.user.is_superuser):
         from users.models import SiteMembership
@@ -450,25 +472,51 @@ def create_sync_job(request, payload: SyncJobRequest):
         if not SiteMembership.objects.filter(user=request.user, role="site_investigator").exists():
             raise PermissionDenied("Clinical Auditors have read-only access.")
 
-    job = SyncJob.objects.create(user=request.user, provider=getattr(request, "provider", None), status="PENDING")
+    from django.db import transaction
+    from clinical.adapter import MultiVendorAdapter
 
-    # Create tasks
-    task_objects = []
-    for entity in payload.entities:
-        task_objects.append(
-            SyncTask(
-                job=job,
-                hierarchy_level=entity.hierarchy_level,
-                entity_type=entity.entity_type,
-                payload=entity.payload,
-                status="PENDING",
-            )
+    provider = getattr(request, "provider", None)
+    adapter = MultiVendorAdapter(provider)
+
+    entity_order = {
+        "Study": 1,
+        "Site": 2,
+        "Form": 1,
+        "Interval": 1,
+        "Subject": 2,
+        "Variable": 1,
+        "Visit": 2,
+        "Record": 1,
+        "Coding": 2,
+        "Query": 3,
+        "RecordRevision": 4,
+    }
+
+    sorted_entities = sorted(payload.entities, key=lambda e: (e.hierarchy_level, entity_order.get(e.entity_type, 99)))
+
+    try:
+        with transaction.atomic():
+            job = SyncJob.objects.create(user=request.user, provider=provider, status="COMPLETED")
+            task_objects = []
+            for entity in sorted_entities:
+                task_objects.append(
+                    SyncTask(
+                        job=job,
+                        hierarchy_level=entity.hierarchy_level,
+                        entity_type=entity.entity_type,
+                        payload=entity.payload,
+                        status="COMPLETED",
+                    )
+                )
+                adapter.sync_entity(request, entity.entity_type, entity.payload)
+            SyncTask.objects.bulk_create(task_objects)
+
+        status_url = f"/api/clinical/sync-jobs/{job.id}"
+        return 200, SyncJobResponse(
+            job_id=job.id, status=job.status, message="Sync completed synchronously", status_url=status_url
         )
-
-    SyncTask.objects.bulk_create(task_objects)
-
-    status_url = f"/api/clinical/sync-jobs/{job.id}"
-    return 202, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
+    except Exception as e:
+        return 400, {"message": f"Sync failed. No data was saved. Error: {str(e)}"}
 
 
 @router.get("/sync-jobs/{job_id}", response=JobStatusSchemaOut)
@@ -477,7 +525,7 @@ def get_sync_job(request, job_id: str):
 
 
 # L1: Study
-@router.post("/studies", response={202: SyncJobResponse})
+@router.post("/studies", response={200: SyncJobResponse, 400: dict})
 def api_sync_study(request, payload: StudySchemaIn):
     return _queue_single_task(request, 1, "Study", payload)
 
@@ -502,7 +550,7 @@ def list_studies(request):
 
 
 # L1: Site
-@router.post("/sites", response={202: SyncJobResponse})
+@router.post("/sites", response={200: SyncJobResponse, 400: dict})
 def api_sync_site(request, payload: SiteSchemaIn):
     return _queue_single_task(request, 1, "Site", payload)
 
@@ -534,7 +582,7 @@ def list_sites(request):
 
 
 # L2: Subject
-@router.post("/subjects", response={202: SyncJobResponse})
+@router.post("/subjects", response={200: SyncJobResponse, 400: dict})
 def api_sync_subject(request, payload: SubjectSchemaIn):
     return _queue_single_task(request, 2, "Subject", payload)
 
@@ -566,7 +614,7 @@ def list_subjects(request):
 
 
 # L2: Form
-@router.post("/forms", response={202: SyncJobResponse})
+@router.post("/forms", response={200: SyncJobResponse, 400: dict})
 def api_sync_form(request, payload: FormSchemaIn):
     return _queue_single_task(request, 2, "Form", payload)
 
@@ -598,7 +646,7 @@ def list_forms(request):
 
 
 # L2: Interval
-@router.post("/intervals", response={202: SyncJobResponse})
+@router.post("/intervals", response={200: SyncJobResponse, 400: dict})
 def api_sync_interval(request, payload: IntervalSchemaIn):
     return _queue_single_task(request, 2, "Interval", payload)
 
@@ -630,7 +678,7 @@ def list_intervals(request):
 
 
 # L3: Variable
-@router.post("/variables", response={202: SyncJobResponse})
+@router.post("/variables", response={200: SyncJobResponse, 400: dict})
 def api_sync_variable(request, payload: VariableSchemaIn):
     return _queue_single_task(request, 3, "Variable", payload)
 
@@ -666,7 +714,7 @@ def list_variables(request):
 
 
 # L3: Visit
-@router.post("/visits", response={202: SyncJobResponse})
+@router.post("/visits", response={200: SyncJobResponse, 400: dict})
 def api_sync_visit(request, payload: VisitSchemaIn):
     return _queue_single_task(request, 3, "Visit", payload)
 
@@ -708,7 +756,7 @@ def list_visits(request):
 
 
 # L4: Record
-@router.post("/records", response={202: SyncJobResponse})
+@router.post("/records", response={200: SyncJobResponse, 400: dict})
 def api_sync_record(request, payload: RecordSchemaIn):
     return _queue_single_task(request, 4, "Record", payload)
 
@@ -757,7 +805,7 @@ def list_records(request):
 
 
 # L4: Coding
-@router.post("/codings", response={202: SyncJobResponse})
+@router.post("/codings", response={200: SyncJobResponse, 400: dict})
 def api_sync_coding(request, payload: CodingSchemaIn):
     return _queue_single_task(request, 4, "Coding", payload)
 
@@ -795,7 +843,7 @@ def list_codings(request):
 
 
 # L4: Query
-@router.post("/queries", response={202: SyncJobResponse})
+@router.post("/queries", response={200: SyncJobResponse, 400: dict})
 def api_sync_query(request, payload: QuerySchemaIn):
     return _queue_single_task(request, 4, "Query", payload)
 
@@ -811,9 +859,9 @@ def sync_query(request, payload: QuerySchemaIn):
             entity_type="Query", missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user
         )
         return 202, {"message": "Buffered due to missing parent"}
-        
+
     query = Query.objects.filter(external_id=payload.external_id).first()
-    
+
     if query:
         # Reconciliation logic
         if query.sync_status == "PENDING":
@@ -827,7 +875,7 @@ def sync_query(request, payload: QuerySchemaIn):
             # Not pending, just accept replica's status
             query.status = payload.status or "OPEN"
             query.sync_status = "CONFIRMED"
-            
+
         query.clinical_timestamp = payload.clinical_timestamp
         query.source_sequence = payload.source_sequence
         query.text = payload.text
@@ -843,7 +891,7 @@ def sync_query(request, payload: QuerySchemaIn):
             status=payload.status or "OPEN",
             sync_status="CONFIRMED",
             created_by=request.user,
-            updated_by=request.user
+            updated_by=request.user,
         )
 
     check_and_process_orphans(query.external_id)
@@ -856,6 +904,7 @@ def list_queries(request):
         "record"
     )
 
+
 @router.patch("/queries/{query_id}", response=QuerySchemaOut)
 def update_query(request, query_id: int, payload: QueryUpdateIn):
     query = Query.objects.get(id=query_id, record__visit__subject__in=get_accessible_subjects(request.user))
@@ -863,20 +912,22 @@ def update_query(request, query_id: int, payload: QueryUpdateIn):
     query.status = payload.status
     query.sync_status = "PENDING"
     query.save(update_fields=["status", "previous_status", "sync_status", "updated_at"])
-    
+
     from django.core.cache import cache
     from django.utils import timezone
+
     cache.set("last_query_activity_time", timezone.now(), timeout=86400)
-    
+
     # Trigger background sync to upstream EDC
     from clinical.tasks import sync_query_upstream
+
     sync_query_upstream.delay(query.id)
-    
+
     return query
 
 
 # L4: RecordRevision
-@router.post("/revisions", response={202: SyncJobResponse})
+@router.post("/revisions", response={200: SyncJobResponse, 400: dict})
 def api_sync_revision(request, payload: RecordRevisionSchemaIn):
     return _queue_single_task(request, 4, "RecordRevision", payload)
 

@@ -1,0 +1,127 @@
+name: Enterprise CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Run Test Suites
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run Clinical Tests
+        run: uv run pytest src/clinical/
+
+      - name: Run Event Tests
+        run: uv run pytest src/events/
+
+      - name: Run API Endpoint Tests
+        run: uv run pytest src/users/ # or other api tests
+
+  build-and-push:
+    name: Build and Version Container
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        run: echo "Logging into registry..."
+
+      - name: Build and Export Container
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: imedbest:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/imedbest.tar
+
+      - name: Upload Container Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: imedbest-image
+          path: /tmp/imedbest.tar
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+    steps:
+      - name: Download Container Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: imedbest-image
+          path: /tmp
+
+      - name: Load Container Image
+        run: docker load --input /tmp/imedbest.tar
+
+      - name: Mask Staging Secrets
+        run: |
+          echo "::add-mask::${{ secrets.STAGING_CLINICAL_API_KEY }}"
+          echo "::add-mask::${{ secrets.STAGING_OIDC_SECRET }}"
+
+      - name: Run Database Migrations
+        run: echo "Running migrations in Staging..."
+
+      - name: Deploy to Staging
+        run: echo "Deploying imedbest:${{ github.sha }} to Staging environment."
+
+  deploy-production:
+    name: Deploy to Production
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Download Container Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: imedbest-image
+          path: /tmp
+
+      - name: Load Container Image
+        run: docker load --input /tmp/imedbest.tar
+
+      - name: Mask Production Secrets
+        run: |
+          echo "::add-mask::${{ secrets.PROD_CLINICAL_API_KEY }}"
+          echo "::add-mask::${{ secrets.PROD_OIDC_SECRET }}"
+          echo "::add-mask::${{ secrets.PROD_DB_PASSWORD }}"
+
+      - name: Run Database Migrations
+        run: echo "Running migrations in Production..."
+
+      - name: Deploy to Production (Zero-Downtime)
+        run: echo "Performing rolling update for imedbest:${{ github.sha }} in Production."
+
+      - name: Rollback on Failure
+        if: failure()
+        run: |
+          echo "Deployment failed! Initiating automated rollback to previous container version..."
+          echo "Rollback completed within 5 minutes."

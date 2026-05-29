@@ -6,6 +6,22 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 
+
+class Provider(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    api_endpoint = models.URLField(blank=True, null=True)
+    auth_protocol = models.CharField(max_length=50, blank=True, null=True, choices=[
+        ('OIDC', 'OIDC'),
+        ('API_KEY', 'API Key'),
+        ('OAUTH2', 'OAuth2')
+    ])
+    auth_credentials = models.JSONField(blank=True, null=True, help_text="Store provider-specific API and authentication details here.")
+    hierarchy_mapping = models.JSONField(default=dict, blank=True, help_text="Maps external vendor hierarchy to internal clinical models.")
+    schema_mapping = models.JSONField(default=dict, blank=True, help_text="Maps external data fields to internal clinical attributes.")
+
+    def __str__(self):
+        return self.name
+
 class ClinicalEntityQuerySet(models.QuerySet):
     def delete(self):
         for obj in self:
@@ -28,7 +44,8 @@ class AllManager(models.Manager):
 
 
 class ClinicalEntity(models.Model):
-    external_id = models.CharField(max_length=255, unique=True)
+    external_id = models.CharField(max_length=255)
+    provider = models.ForeignKey("clinical.Provider", on_delete=models.PROTECT, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
@@ -59,6 +76,9 @@ class ClinicalEntity(models.Model):
 
     class Meta:
         abstract = True
+        constraints = [
+            models.UniqueConstraint(fields=['provider', 'external_id'], name='%(app_label)s_%(class)s_unique_provider_external_id')
+        ]
 
     def delete(self, using=None, keep_parents=False, deleted_at=None):
         if not self.is_deleted:
@@ -238,6 +258,7 @@ def create_record_revision(sender, instance, created, **kwargs):
     )
 
 class BufferedOrphan(models.Model):
+    provider = models.ForeignKey("clinical.Provider", on_delete=models.CASCADE, null=True, blank=True)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     entity_type = models.CharField(max_length=50)
     missing_parent_id = models.CharField(max_length=255)
@@ -250,6 +271,7 @@ class BufferedOrphan(models.Model):
         return f"BufferedOrphan {self.entity_type} waiting for {self.missing_parent_id}"
 
 class SyncJob(models.Model):
+    provider = models.ForeignKey("clinical.Provider", on_delete=models.CASCADE, null=True, blank=True)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     status = models.CharField(max_length=50, default='PENDING', choices=[
         ('PENDING', 'Pending'),

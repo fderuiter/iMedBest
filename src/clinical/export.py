@@ -28,14 +28,28 @@ def generate_cdisc_export(request):
         vs_writer = csv.writer(vs_buffer)
         vs_writer.writerow(["STUDYID", "DOMAIN", "USUBJID", "VSSEQ", "VSTESTCD", "VSTEST", "VSORRES"])
         records = Record.objects.select_related('visit__subject__site__study', 'variable').order_by(
+            'visit__subject__site__study__external_id',
+            'visit__subject__external_id',
             models.F('source_sequence').asc(nulls_last=True),
             models.F('clinical_timestamp').asc(nulls_last=True),
             'created_at'
         )
-        for idx, record in enumerate(records):
+
+        current_usubjid = None
+        current_seq = 1
+
+        for record in records:
             study_id = record.visit.subject.site.study.external_id
             usubjid = f"{study_id}-{record.visit.subject.external_id}"
-            seq = record.source_sequence if record.source_sequence is not None else idx + 1
+
+            if usubjid != current_usubjid:
+                current_usubjid = usubjid
+                current_seq = 1
+
+            seq = record.source_sequence if record.source_sequence is not None else current_seq
+            if record.source_sequence is None:
+                current_seq += 1
+
             vs_writer.writerow([
                 study_id,
                 "VS",

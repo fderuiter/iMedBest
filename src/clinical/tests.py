@@ -7,11 +7,11 @@ from .models import Record, SyncJob
 from clinical.management.commands.run_sync_worker import Command as WorkerCommand
 
 
-def get_auth_headers():
+def get_auth_headers(study_key="test-study"):
     User = get_user_model()
     user, _ = User.objects.get_or_create(username="test_user", is_staff=True)
     token = create_jwt_token(user)
-    return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+    return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": study_key}
 
 
 def process_all_jobs():
@@ -28,7 +28,7 @@ def process_all_jobs():
 
 @pytest.mark.django_db
 def test_multi_level_data_import(client):
-    headers = get_auth_headers()
+    headers = get_auth_headers("study-1")
     # Level 1
     study_resp = client.post(
         "/api/clinical/studies",
@@ -98,7 +98,7 @@ def test_multi_level_data_import(client):
 
 @pytest.mark.django_db
 def test_longitudinal_reconstruction(client):
-    headers = get_auth_headers()
+    headers = get_auth_headers("study-2")
     # Setup data
     client.post("/api/clinical/studies", data={"external_id": "study-2", "name": "Study 2"}, content_type="application/json", **headers)
     client.post("/api/clinical/sites", data={"external_id": "site-2", "study_ext_id": "study-2", "name": "Site 2"}, content_type="application/json", **headers)
@@ -166,7 +166,7 @@ def test_longitudinal_reconstruction(client):
 
 @pytest.mark.django_db
 def test_sync_job_endpoint(client):
-    headers = get_auth_headers()
+    headers = get_auth_headers("study-async")
     from clinical.models import SyncJob
 
     payload = {
@@ -205,7 +205,7 @@ def test_sync_job_endpoint(client):
 
 @pytest.mark.django_db
 def test_sync_job_atomic_failure(client):
-    headers = get_auth_headers()
+    headers = get_auth_headers("study-atomic")
     
     # We will send a valid study and an invalid site (e.g. unknown external id for study)
     # wait, MultiVendorAdapter.sync_entity might just buffer it as an orphan if the parent is missing.

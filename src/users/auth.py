@@ -73,6 +73,13 @@ class OIDCBearer(HttpBearer):
 
                 user, _ = User.objects.get_or_create(username=email, defaults={"email": email})
                 roles = data.get("roles", [])
+                
+                # Assign is_staff if "Admin" in roles
+                is_admin = "Admin" in str(roles)
+                if user.is_staff != is_admin:
+                    user.is_staff = is_admin
+                    user.save(update_fields=["is_staff"])
+
                 if "Export" in str(roles) or "Extractor" in str(roles) or "CDISC" in str(roles) or getattr(user, 'is_staff', False):
                     # We might need to store roles if the check is done in the endpoint
                     pass

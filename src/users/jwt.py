@@ -52,7 +52,7 @@ def decode_jwt_token(token):
                 email = f"{user_id}@oidc.user"
 
             user_model = get_user_model()
-            user, _ = user_model.objects.get_or_create(username=user_id, defaults={"email": email, "is_staff": True})
+            user, _ = user_model.objects.get_or_create(username=user_id, defaults={"email": email})
             return user
         except Exception as e:
             continue

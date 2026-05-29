@@ -9,7 +9,7 @@ def get_auth_headers():
     User = get_user_model()
     user, _ = User.objects.get_or_create(username="test_user", is_staff=True)
     token = create_jwt_token(user)
-    return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+    return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": "test-study"}
 
 def process_all_jobs():
     worker = WorkerCommand()
@@ -26,10 +26,10 @@ def process_all_jobs():
 def test_reactive_orphan_buffering(client):
     headers = get_auth_headers()
     # Setup some base level 1 and 2
-    client.post("/api/clinical/studies", data={"external_id": "st-1", "name": "S1"}, content_type="application/json", **headers)
-    client.post("/api/clinical/sites", data={"external_id": "si-1", "study_ext_id": "st-1", "name": "Si1"}, content_type="application/json", **headers)
-    client.post("/api/clinical/intervals", data={"external_id": "int-1", "study_ext_id": "st-1", "name": "I1"}, content_type="application/json", **headers)
-    client.post("/api/clinical/forms", data={"external_id": "f-1", "study_ext_id": "st-1", "name": "F1"}, content_type="application/json", **headers)
+    client.post("/api/clinical/studies", data={"external_id": "test-study", "name": "S1"}, content_type="application/json", **headers)
+    client.post("/api/clinical/sites", data={"external_id": "si-1", "study_ext_id": "test-study", "name": "Si1"}, content_type="application/json", **headers)
+    client.post("/api/clinical/intervals", data={"external_id": "int-1", "study_ext_id": "test-study", "name": "I1"}, content_type="application/json", **headers)
+    client.post("/api/clinical/forms", data={"external_id": "f-1", "study_ext_id": "test-study", "name": "F1"}, content_type="application/json", **headers)
     client.post("/api/clinical/variables", data={"external_id": "v-1", "form_ext_id": "f-1", "name": "V1"}, content_type="application/json", **headers)
     process_all_jobs()
     

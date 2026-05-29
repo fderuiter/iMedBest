@@ -41,7 +41,7 @@ def test_reactive_orphan_buffering(client):
         content_type="application/json", **headers
     )
     process_all_jobs()
-    assert rec_resp.status_code == 202
+    assert rec_resp.status_code == 200
     assert BufferedOrphan.objects.count() == 1
     
     # Sync VISIT before SUBJECT
@@ -52,7 +52,7 @@ def test_reactive_orphan_buffering(client):
         content_type="application/json", **headers
     )
     process_all_jobs()
-    assert vis_resp.status_code == 202
+    assert vis_resp.status_code == 200
     assert BufferedOrphan.objects.count() == 2
     
     # Now sync the SUBJECT
@@ -63,7 +63,7 @@ def test_reactive_orphan_buffering(client):
         content_type="application/json", **headers
     )
     process_all_jobs()
-    assert sub_resp.status_code == 202
+    assert sub_resp.status_code == 200
     
     # Check if all orphans are processed
     assert BufferedOrphan.objects.count() == 0

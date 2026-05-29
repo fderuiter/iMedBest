@@ -4,7 +4,7 @@ import pytest
 from .models import Record, Subject, Visit
 
 @pytest.mark.django_db
-@override_settings(CLINICAL_API_KEY="test_api_key_123")
+@override_settings(CLINICAL_API_KEY="test_api_key_123", CELERY_TASK_ALWAYS_EAGER=True)
 def test_multi_level_data_import(client):
     # Level 1
     study_resp = client.post(
@@ -72,7 +72,7 @@ def test_multi_level_data_import(client):
 
 
 @pytest.mark.django_db
-@override_settings(CLINICAL_API_KEY="test_api_key_123")
+@override_settings(CLINICAL_API_KEY="test_api_key_123", CELERY_TASK_ALWAYS_EAGER=True)
 def test_longitudinal_reconstruction(client):
     # Setup data
     client.post("/api/clinical/studies", data={"external_id": "study-2", "name": "Study 2"}, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
@@ -138,6 +138,7 @@ def test_longitudinal_reconstruction(client):
     assert rows[1]["VSSEQ"] == "2"
 
 @pytest.mark.django_db
+@override_settings(CLINICAL_API_KEY="test_api_key_123", CELERY_TASK_ALWAYS_EAGER=True)
 def test_sync_job_endpoint(client):
     from clinical.models import SyncJob
     
@@ -159,7 +160,7 @@ def test_sync_job_endpoint(client):
     resp = client.post(
         "/api/clinical/sync-jobs",
         data=payload,
-        content_type="application/json", HTTP_AUTHORIZATION="Bearer test_token"
+        content_type="application/json", HTTP_X_API_KEY="test_api_key_123"
     )
     assert resp.status_code == 202
     data = resp.json()

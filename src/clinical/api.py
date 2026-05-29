@@ -13,10 +13,19 @@ from clinical.models import Provider
 class JWTBearer(HttpBearer):
     def authenticate(self, request, token):
         from users.jwt import decode_jwt_token
+        from ninja.errors import HttpError
+
+        studyKey = request.headers.get("studyKey") or request.GET.get("studyKey")
+        siteKey = request.headers.get("siteKey") or request.GET.get("siteKey")
+
+        if not studyKey and not siteKey:
+            raise HttpError(400, "Missing required tenant context identifier: studyKey or siteKey")
 
         user = decode_jwt_token(token)
         if user:
             request.user = user
+            request.studyKey = studyKey
+            request.siteKey = siteKey
             # Assign user_roles needed for export to users authenticated via JWT
             # In a full Entra setup, this would map groups/roles from the token
             # For now, give them "extractor" role so CDISC export isn't totally blocked
@@ -379,46 +388,70 @@ class RecordRevisionSchemaOut(ModelSchema):
 from django.db.models import Q
 
 
-def get_accessible_studies(user):
+def get_accessible_studies(request):
     from users.models import SiteMembership, StudyMembership
+    user = request.user
+
+    qs = Study.objects.all()
+    if request.studyKey:
+        qs = qs.filter(external_id=request.studyKey)
+    elif request.siteKey:
+        qs = qs.filter(sites__external_id=request.siteKey)
 
     if user.is_staff or user.is_superuser:
-        return Study.objects.all()
+        return qs.distinct()
+        
     auditor_study_ids = StudyMembership.objects.filter(user=user, role="clinical_auditor").values_list(
         "study_id", flat=True
     )
     investigator_study_ids = SiteMembership.objects.filter(user=user, role="site_investigator").values_list(
         "site__study_id", flat=True
     )
-    return Study.objects.filter(Q(id__in=auditor_study_ids) | Q(id__in=investigator_study_ids))
+    return qs.filter(Q(id__in=auditor_study_ids) | Q(id__in=investigator_study_ids)).distinct()
 
 
-def get_accessible_sites(user):
+def get_accessible_sites(request):
     from users.models import SiteMembership, StudyMembership
+    user = request.user
+
+    qs = Site.objects.all()
+    if request.siteKey:
+        qs = qs.filter(external_id=request.siteKey)
+    if request.studyKey:
+        qs = qs.filter(study__external_id=request.studyKey)
 
     if user.is_staff or user.is_superuser:
-        return Site.objects.all()
+        return qs.distinct()
+        
     auditor_study_ids = StudyMembership.objects.filter(user=user, role="clinical_auditor").values_list(
         "study_id", flat=True
     )
     investigator_site_ids = SiteMembership.objects.filter(user=user, role="site_investigator").values_list(
         "site_id", flat=True
     )
-    return Site.objects.filter(Q(study_id__in=auditor_study_ids) | Q(id__in=investigator_site_ids))
+    return qs.filter(Q(study_id__in=auditor_study_ids) | Q(id__in=investigator_site_ids)).distinct()
 
 
-def get_accessible_subjects(user):
+def get_accessible_subjects(request):
     from users.models import SiteMembership, StudyMembership
+    user = request.user
+
+    qs = Subject.objects.all()
+    if request.siteKey:
+        qs = qs.filter(site__external_id=request.siteKey)
+    if request.studyKey:
+        qs = qs.filter(site__study__external_id=request.studyKey)
 
     if user.is_staff or user.is_superuser:
-        return Subject.objects.all()
+        return qs.distinct()
+        
     auditor_study_ids = StudyMembership.objects.filter(user=user, role="clinical_auditor").values_list(
         "study_id", flat=True
     )
     investigator_site_ids = SiteMembership.objects.filter(user=user, role="site_investigator").values_list(
         "site_id", flat=True
     )
-    return Subject.objects.filter(Q(site__study_id__in=auditor_study_ids) | Q(site_id__in=investigator_site_ids))
+    return qs.filter(Q(site__study_id__in=auditor_study_ids) | Q(site_id__in=investigator_site_ids)).distinct()
 
 
 import json
@@ -546,7 +579,7 @@ def sync_study(request, payload: StudySchemaIn):
 
 @router.get("/studies", response=list[StudySchemaOut])
 def list_studies(request):
-    return get_accessible_studies(request.user)
+    return get_accessible_studies(request)
 
 
 # L1: Site
@@ -556,7 +589,7 @@ def api_sync_site(request, payload: SiteSchemaIn):
 
 
 def sync_site(request, payload: SiteSchemaIn):
-    study = get_accessible_studies(request.user).filter(external_id=payload.study_ext_id).first()
+    study = get_accessible_studies(request).filter(external_id=payload.study_ext_id).first()
     if not study:
         BufferedOrphan.objects.create(
             entity_type="Site", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user
@@ -578,7 +611,7 @@ def sync_site(request, payload: SiteSchemaIn):
 
 @router.get("/sites", response=list[SiteSchemaOut])
 def list_sites(request):
-    return get_accessible_sites(request.user).select_related("study")
+    return get_accessible_sites(request).select_related("study")
 
 
 # L2: Subject
@@ -588,7 +621,7 @@ def api_sync_subject(request, payload: SubjectSchemaIn):
 
 
 def sync_subject(request, payload: SubjectSchemaIn):
-    site = get_accessible_sites(request.user).filter(external_id=payload.site_ext_id).first()
+    site = get_accessible_sites(request).filter(external_id=payload.site_ext_id).first()
     if not site:
         BufferedOrphan.objects.create(
             entity_type="Subject", missing_parent_id=payload.site_ext_id, payload=payload.dict(), user=request.user
@@ -610,7 +643,7 @@ def sync_subject(request, payload: SubjectSchemaIn):
 
 @router.get("/subjects", response=list[SubjectSchemaOut])
 def list_subjects(request):
-    return get_accessible_subjects(request.user).select_related("site")
+    return get_accessible_subjects(request).select_related("site")
 
 
 # L2: Form
@@ -620,7 +653,7 @@ def api_sync_form(request, payload: FormSchemaIn):
 
 
 def sync_form(request, payload: FormSchemaIn):
-    study = get_accessible_studies(request.user).filter(external_id=payload.study_ext_id).first()
+    study = get_accessible_studies(request).filter(external_id=payload.study_ext_id).first()
     if not study:
         BufferedOrphan.objects.create(
             entity_type="Form", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user
@@ -642,7 +675,7 @@ def sync_form(request, payload: FormSchemaIn):
 
 @router.get("/forms", response=list[FormSchemaOut])
 def list_forms(request):
-    return Form.objects.filter(study__in=get_accessible_studies(request.user)).select_related("study")
+    return Form.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
 
 
 # L2: Interval
@@ -652,7 +685,7 @@ def api_sync_interval(request, payload: IntervalSchemaIn):
 
 
 def sync_interval(request, payload: IntervalSchemaIn):
-    study = get_accessible_studies(request.user).filter(external_id=payload.study_ext_id).first()
+    study = get_accessible_studies(request).filter(external_id=payload.study_ext_id).first()
     if not study:
         BufferedOrphan.objects.create(
             entity_type="Interval", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user
@@ -674,7 +707,7 @@ def sync_interval(request, payload: IntervalSchemaIn):
 
 @router.get("/intervals", response=list[IntervalSchemaOut])
 def list_intervals(request):
-    return Interval.objects.filter(study__in=get_accessible_studies(request.user)).select_related("study")
+    return Interval.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
 
 
 # L3: Variable
@@ -685,7 +718,7 @@ def api_sync_variable(request, payload: VariableSchemaIn):
 
 def sync_variable(request, payload: VariableSchemaIn):
     form = (
-        Form.objects.filter(study__in=get_accessible_studies(request.user))
+        Form.objects.filter(study__in=get_accessible_studies(request))
         .filter(external_id=payload.form_ext_id)
         .first()
     )
@@ -710,7 +743,7 @@ def sync_variable(request, payload: VariableSchemaIn):
 
 @router.get("/variables", response=list[VariableSchemaOut])
 def list_variables(request):
-    return Variable.objects.filter(form__study__in=get_accessible_studies(request.user)).select_related("form")
+    return Variable.objects.filter(form__study__in=get_accessible_studies(request)).select_related("form")
 
 
 # L3: Visit
@@ -720,14 +753,14 @@ def api_sync_visit(request, payload: VisitSchemaIn):
 
 
 def sync_visit(request, payload: VisitSchemaIn):
-    subject = get_accessible_subjects(request.user).filter(external_id=payload.subject_ext_id).first()
+    subject = get_accessible_subjects(request).filter(external_id=payload.subject_ext_id).first()
     if not subject:
         BufferedOrphan.objects.create(
             entity_type="Visit", missing_parent_id=payload.subject_ext_id, payload=payload.dict(), user=request.user
         )
         return 202, {"message": "Buffered due to missing parent"}
     interval = (
-        Interval.objects.filter(study__in=get_accessible_studies(request.user))
+        Interval.objects.filter(study__in=get_accessible_studies(request))
         .filter(external_id=payload.interval_ext_id)
         .first()
     )
@@ -752,7 +785,7 @@ def sync_visit(request, payload: VisitSchemaIn):
 
 @router.get("/visits", response=list[VisitSchemaOut])
 def list_visits(request):
-    return Visit.objects.filter(subject__in=get_accessible_subjects(request.user)).select_related("subject", "interval")
+    return Visit.objects.filter(subject__in=get_accessible_subjects(request)).select_related("subject", "interval")
 
 
 # L4: Record
@@ -763,7 +796,7 @@ def api_sync_record(request, payload: RecordSchemaIn):
 
 def sync_record(request, payload: RecordSchemaIn):
     visit = (
-        Visit.objects.filter(subject__in=get_accessible_subjects(request.user))
+        Visit.objects.filter(subject__in=get_accessible_subjects(request))
         .filter(external_id=payload.visit_ext_id)
         .first()
     )
@@ -773,7 +806,7 @@ def sync_record(request, payload: RecordSchemaIn):
         )
         return 202, {"message": "Buffered due to missing parent"}
     variable = (
-        Variable.objects.filter(form__study__in=get_accessible_studies(request.user))
+        Variable.objects.filter(form__study__in=get_accessible_studies(request))
         .filter(external_id=payload.variable_ext_id)
         .first()
     )
@@ -799,7 +832,7 @@ def sync_record(request, payload: RecordSchemaIn):
 
 @router.get("/records", response=list[RecordSchemaOut])
 def list_records(request):
-    return Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)).select_related(
+    return Record.objects.filter(visit__subject__in=get_accessible_subjects(request)).select_related(
         "visit", "variable"
     )
 
@@ -812,7 +845,7 @@ def api_sync_coding(request, payload: CodingSchemaIn):
 
 def sync_coding(request, payload: CodingSchemaIn):
     record = (
-        Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user))
+        Record.objects.filter(visit__subject__in=get_accessible_subjects(request))
         .filter(external_id=payload.record_ext_id)
         .first()
     )
@@ -837,7 +870,7 @@ def sync_coding(request, payload: CodingSchemaIn):
 
 @router.get("/codings", response=list[CodingSchemaOut])
 def list_codings(request):
-    return Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request.user)).select_related(
+    return Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related(
         "record"
     )
 
@@ -850,7 +883,7 @@ def api_sync_query(request, payload: QuerySchemaIn):
 
 def sync_query(request, payload: QuerySchemaIn):
     record = (
-        Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user))
+        Record.objects.filter(visit__subject__in=get_accessible_subjects(request))
         .filter(external_id=payload.record_ext_id)
         .first()
     )
@@ -900,14 +933,14 @@ def sync_query(request, payload: QuerySchemaIn):
 
 @router.get("/queries", response=list[QuerySchemaOut])
 def list_queries(request):
-    return Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request.user)).select_related(
+    return Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related(
         "record"
     )
 
 
 @router.patch("/queries/{query_id}", response=QuerySchemaOut)
 def update_query(request, query_id: int, payload: QueryUpdateIn):
-    query = Query.objects.get(id=query_id, record__visit__subject__in=get_accessible_subjects(request.user))
+    query = Query.objects.get(id=query_id, record__visit__subject__in=get_accessible_subjects(request))
     query.previous_status = query.status
     query.status = payload.status
     query.sync_status = "PENDING"
@@ -934,7 +967,7 @@ def api_sync_revision(request, payload: RecordRevisionSchemaIn):
 
 def sync_revision(request, payload: RecordRevisionSchemaIn):
     record = (
-        Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user))
+        Record.objects.filter(visit__subject__in=get_accessible_subjects(request))
         .filter(external_id=payload.record_ext_id)
         .first()
     )
@@ -963,7 +996,7 @@ def sync_revision(request, payload: RecordRevisionSchemaIn):
 @router.get("/revisions", response=list[RecordRevisionSchemaOut])
 def list_revisions(request):
     return RecordRevision.objects.filter(
-        record__visit__subject__in=get_accessible_subjects(request.user)
+        record__visit__subject__in=get_accessible_subjects(request)
     ).select_related("record")
 
 
@@ -987,6 +1020,9 @@ class BufferedOrphanSchemaOut(ModelSchema):
 
 @router.get("/orphans", response=list[BufferedOrphanSchemaOut])
 def list_orphans(request):
+    if not (request.user.is_staff or request.user.is_superuser):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied("Admin access required")
     return BufferedOrphan.objects.all()
 
 
@@ -1048,9 +1084,27 @@ def delete_entity(request, entity_plural: str, external_id: str):
     if not model_cls:
         raise Http404("Unknown entity type")
 
-    # We should enforce permissions. For simplicity, if not staff, we might restrict,
-    # but based on requirements, assume basic accessible items.
-    obj = get_object_or_404(model_cls, external_id=external_id)
+    # Map to accessible querysets to enforce tenant context and authorization
+    qs_map = {
+        "studies": lambda: get_accessible_studies(request),
+        "sites": lambda: get_accessible_sites(request),
+        "subjects": lambda: get_accessible_subjects(request),
+        "forms": lambda: Form.objects.filter(study__in=get_accessible_studies(request)),
+        "intervals": lambda: Interval.objects.filter(study__in=get_accessible_studies(request)),
+        "variables": lambda: Variable.objects.filter(form__study__in=get_accessible_studies(request)),
+        "visits": lambda: Visit.objects.filter(subject__in=get_accessible_subjects(request)),
+        "records": lambda: Record.objects.filter(visit__subject__in=get_accessible_subjects(request)),
+        "codings": lambda: Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request)),
+        "queries": lambda: Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request)),
+        "revisions": lambda: RecordRevision.objects.filter(record__visit__subject__in=get_accessible_subjects(request)),
+    }
+
+    base_qs_func = qs_map.get(entity_plural.lower())
+    if not base_qs_func:
+        raise Http404("Unknown entity type")
+
+    base_qs = base_qs_func()
+    obj = get_object_or_404(base_qs, external_id=external_id)
     obj.delete()
     return 204, None
 

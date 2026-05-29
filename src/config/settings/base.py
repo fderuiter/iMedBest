@@ -101,3 +101,10 @@ MEDIA_ROOT = ROOT_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "users.User"
+
+CELERY_BEAT_SCHEDULE = {
+    'poll-edc-queries-every-minute': {
+        'task': 'clinical.tasks.poll_edc_queries',
+        'schedule': 60.0,
+    },
+}

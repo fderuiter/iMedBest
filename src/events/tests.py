@@ -3,7 +3,7 @@ import pytest
 from django.urls import reverse
 from clinical.models import Study, Site, Subject, Visit, Record, Variable, Form, Interval
 from events.models import OutboundEvent, DeliveryAttempt, Subscription
-from events.worker import EventWorker
+from events.tasks import process_delivery_attempt
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -61,25 +61,28 @@ def test_event_generation_and_batching(mock_hierarchy, test_subscription):
     record_idx = types_list.index("Record")
     assert study_idx < record_idx
 
+from unittest.mock import patch
 def test_background_worker(mock_hierarchy, test_subscription):
     study, site, subject, form, interval, variable, visit = mock_hierarchy
     
-    # Create Record
-    record = Record.objects.create(
-        external_id="rec_worker",
-        visit=visit,
-        variable=variable,
-        value="Worker test"
-    )
-    
-    attempt = DeliveryAttempt.objects.filter(event__event_type="Record").last()
-    assert attempt.status == "PENDING"
-    
-    worker = EventWorker(sleep_interval=0.1)
-    worker.process_pending()
-    
-    attempt.refresh_from_db()
-    assert attempt.status == "DELIVERED"
+    # Mock the celery delay so we can control when it runs
+    with patch("events.tasks.process_delivery_attempt.delay") as mock_delay:
+        # Create Record
+        record = Record.objects.create(
+            external_id="rec_worker",
+            visit=visit,
+            variable=variable,
+            value="Worker test"
+        )
+        
+        attempt = DeliveryAttempt.objects.filter(event__event_type="Record").last()
+        assert attempt.status == "PENDING"
+        
+        # Now run the task directly like a worker would
+        process_delivery_attempt(attempt.id)
+        
+        attempt.refresh_from_db()
+        assert attempt.status == "DELIVERED"
 
 def test_subscription_filtering(mock_hierarchy):
     study, site, subject, form, interval, variable, visit = mock_hierarchy

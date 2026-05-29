@@ -1,8 +1,10 @@
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
+from django.db import transaction
 from django.apps import apps
 from .models import OutboundEvent, DeliveryAttempt, Subscription
 from .serializers import get_hierarchical_batch
+from .tasks import process_delivery_attempt
 
 def create_event(action, instance):
     from clinical.models import ClinicalEntity
@@ -28,10 +30,11 @@ def create_event(action, instance):
     subscriptions = Subscription.objects.filter(is_active=True)
     for sub in subscriptions:
         if not sub.event_type or sub.event_type == model_name:
-            DeliveryAttempt.objects.create(
+            attempt = DeliveryAttempt.objects.create(
                 event=event,
                 subscription=sub
             )
+            transaction.on_commit(lambda a_id=attempt.id: process_delivery_attempt.delay(a_id))
 
 @receiver(post_save)
 def track_clinical_save(sender, instance, created, **kwargs):

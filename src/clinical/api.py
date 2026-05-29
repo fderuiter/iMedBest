@@ -254,12 +254,16 @@ def get_accessible_subjects(user):
 
 import json
 
+
 def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_obj) -> tuple[int, SyncJobResponse]:
     payload_dict = json.loads(payload_obj.json())
     job = SyncJob.objects.create(user=request.user, status='PENDING')
+    from .registry import SyncRegistry
+    registry_entry = SyncRegistry.get(entity_type)
+    h_level = registry_entry['hierarchy_level'] if registry_entry else hierarchy_level
     SyncTask.objects.create(
         job=job,
-        hierarchy_level=hierarchy_level,
+        hierarchy_level=h_level,
         entity_type=entity_type,
         payload=payload_dict,
         status='PENDING'
@@ -277,11 +281,14 @@ def create_sync_job(request, payload: SyncJobRequest):
     )
 
     # Create tasks
+    from .registry import SyncRegistry
     task_objects = []
     for entity in payload.entities:
+        registry_entry = SyncRegistry.get(entity.entity_type)
+        h_level = registry_entry['hierarchy_level'] if registry_entry else entity.hierarchy_level
         task_objects.append(SyncTask(
             job=job,
-            hierarchy_level=entity.hierarchy_level,
+            hierarchy_level=h_level,
             entity_type=entity.entity_type,
             payload=entity.payload,
             status='PENDING'
@@ -664,40 +671,48 @@ def list_orphans(request):
 
 from django.db import transaction
 
+
 def check_and_process_orphans(parent_external_id):
     orphans = list(BufferedOrphan.objects.filter(missing_parent_id=parent_external_id))
     for orphan in orphans:
         try:
             with transaction.atomic():
                 _reprocess_orphan(orphan)
-        except Exception as e:
+        except Exception:
             pass
 
 def _reprocess_orphan(orphan):
     req = type('DummyRequest', (object,), {'user': orphan.user, 'user_roles': ['cdisc']})()
-    
-    mapping = {
-        'Site': (sync_site, SiteSchemaIn),
-        'Subject': (sync_subject, SubjectSchemaIn),
-        'Form': (sync_form, FormSchemaIn),
-        'Interval': (sync_interval, IntervalSchemaIn),
-        'Variable': (sync_variable, VariableSchemaIn),
-        'Visit': (sync_visit, VisitSchemaIn),
-        'Record': (sync_record, RecordSchemaIn),
-        'Coding': (sync_coding, CodingSchemaIn),
-        'Query': (sync_query, QuerySchemaIn),
-        'RecordRevision': (sync_revision, RecordRevisionSchemaIn),
-    }
-    
-    if orphan.entity_type not in mapping:
+
+    from .registry import SyncRegistry
+    registry_entry = SyncRegistry.get(orphan.entity_type)
+
+    if not registry_entry:
         orphan.delete()
         return
-        
-    func, schema_cls = mapping[orphan.entity_type]
+
+    func = registry_entry['sync_func']
+    schema_cls = registry_entry['schema_in']
     payload = schema_cls(**orphan.payload)
-    
+
     # Process
     func(req, payload)
-    
+
     # Delete after processing
     orphan.delete()
+
+
+# --- Registry Setup ---
+from .registry import SyncRegistry
+
+SyncRegistry.register('Study', 1, sync_study, StudySchemaIn)
+SyncRegistry.register('Site', 1, sync_site, SiteSchemaIn)
+SyncRegistry.register('Subject', 2, sync_subject, SubjectSchemaIn)
+SyncRegistry.register('Form', 2, sync_form, FormSchemaIn)
+SyncRegistry.register('Interval', 2, sync_interval, IntervalSchemaIn)
+SyncRegistry.register('Variable', 3, sync_variable, VariableSchemaIn)
+SyncRegistry.register('Visit', 3, sync_visit, VisitSchemaIn)
+SyncRegistry.register('Record', 4, sync_record, RecordSchemaIn)
+SyncRegistry.register('Coding', 4, sync_coding, CodingSchemaIn)
+SyncRegistry.register('Query', 4, sync_query, QuerySchemaIn)
+SyncRegistry.register('RecordRevision', 4, sync_revision, RecordRevisionSchemaIn)

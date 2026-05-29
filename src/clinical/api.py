@@ -351,12 +351,20 @@ class CodingSchemaOut(ModelSchema):
         ]
 
 
+from typing import Optional
+
 class QuerySchemaIn(ModelSchema):
     record_ext_id: str
+    status: Optional[str] = "OPEN"
 
     class Meta:
         model = Query
-        fields = ["clinical_timestamp", "source_sequence", "external_id", "text"]
+        fields = ["clinical_timestamp", "source_sequence", "external_id", "text", "status"]
+
+from ninja import Schema
+
+class QueryUpdateIn(Schema):
+    status: str
 
 
 class QuerySchemaOut(ModelSchema):
@@ -369,6 +377,9 @@ class QuerySchemaOut(ModelSchema):
             "id",
             "external_id",
             "text",
+            "status",
+            "sync_status",
+            "last_sync_error",
             "record",
             "created_at",
             "updated_at",
@@ -841,16 +852,41 @@ def sync_query(request, payload: QuerySchemaIn):
             entity_type="Query", missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user
         )
         return 202, {"message": "Buffered due to missing parent"}
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp,
-        "source_sequence": payload.source_sequence,
-        "record": record,
-        "text": payload.text,
-        "updated_by": request.user,
-    }
-    query, _ = Query.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
+        
+    query = Query.objects.filter(external_id=payload.external_id).first()
+    
+    if query:
+        # Reconciliation logic
+        if query.sync_status == "PENDING":
+            if payload.status == query.status:
+                # Upstream confirmed our optimistic state!
+                query.sync_status = "CONFIRMED"
+            else:
+                # Replica is likely stale, don't overwrite optimistic status
+                pass
+        else:
+            # Not pending, just accept replica's status
+            query.status = payload.status or "OPEN"
+            query.sync_status = "CONFIRMED"
+            
+        query.clinical_timestamp = payload.clinical_timestamp
+        query.source_sequence = payload.source_sequence
+        query.text = payload.text
+        query.updated_by = request.user
+        query.save()
+    else:
+        query = Query.objects.create(
+            external_id=payload.external_id,
+            record=record,
+            clinical_timestamp=payload.clinical_timestamp,
+            source_sequence=payload.source_sequence,
+            text=payload.text,
+            status=payload.status or "OPEN",
+            sync_status="CONFIRMED",
+            created_by=request.user,
+            updated_by=request.user
+        )
+
     check_and_process_orphans(query.external_id)
     return query
 
@@ -860,6 +896,24 @@ def list_queries(request):
     return Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request.user)).select_related(
         "record"
     )
+
+@router.patch("/queries/{query_id}", response=QuerySchemaOut)
+def update_query(request, query_id: int, payload: QueryUpdateIn):
+    query = Query.objects.get(id=query_id, record__visit__subject__in=get_accessible_subjects(request.user))
+    query.previous_status = query.status
+    query.status = payload.status
+    query.sync_status = "PENDING"
+    query.save(update_fields=["status", "previous_status", "sync_status", "updated_at"])
+    
+    from django.core.cache import cache
+    from django.utils import timezone
+    cache.set("last_query_activity_time", timezone.now(), timeout=86400)
+    
+    # Trigger background sync to upstream EDC
+    from clinical.tasks import sync_query_upstream
+    sync_query_upstream.delay(query.id)
+    
+    return query
 
 
 # L4: RecordRevision

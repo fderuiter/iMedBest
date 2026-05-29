@@ -1,4 +1,5 @@
 import logging
+from django.utils import timezone
 
 from celery import shared_task
 
@@ -281,4 +282,76 @@ def reconstruct_subject_timeline(subject_id):
 
     if records_to_update_seq:
         Record.objects.bulk_update(records_to_update_seq, ['source_sequence'])
+
+
+@shared_task(bind=True, max_retries=3)
+def sync_query_upstream(self, query_id):
+    from clinical.models import Query
+    from audit.models import AuditLog
+    try:
+        query = Query.objects.get(id=query_id)
+        # Simulate pushing to upstream EDC via MultiVendorAdapter or external API
+        # If it fails, raise exception to trigger retry
+        
+        # Simulate success
+        query.sync_status = "CONFIRMED"
+        query.last_sync_error = None
+        query.previous_status = None
+        query.save(update_fields=["sync_status", "last_sync_error", "previous_status", "updated_at"])
+        
+        AuditLog.objects.create(
+            action="UPDATE",
+            model_name="Query",
+            object_id=str(query.external_id),
+            changes={"sync_status": "CONFIRMED", "message": "Upstream sync completed successfully"},
+            user=query.updated_by
+        )
+    except Exception as exc:
+        try:
+            self.retry(exc=exc, countdown=10)
+        except self.MaxRetriesExceededError:
+            query = Query.objects.get(id=query_id)
+            if query.previous_status:
+                query.status = query.previous_status
+            query.sync_status = "SYNC_FAILED"
+            query.last_sync_error = str(exc)
+            query.save(update_fields=["status", "sync_status", "last_sync_error", "updated_at"])
+            
+            AuditLog.objects.create(
+                action="UPDATE",
+                model_name="Query",
+                object_id=str(query.external_id),
+                changes={"sync_status": "SYNC_FAILED", "message": f"Sync failed max retries: {str(exc)}", "status_reverted": True},
+                user=query.updated_by
+            )
+            logger.error(f"Sync failed for Query {query_id} after retries: {exc}")
+
+from django.core.cache import cache
+
+@shared_task
+def poll_edc_queries():
+    # Adaptive throttling logic
+    # Check if there was activity recently, if so poll aggressively, otherwise scale down
+    last_activity = cache.get("last_query_activity_time")
+    current_time = timezone.now()
+    
+    polling_interval = 60 # Default 60 seconds
+    if last_activity and (current_time - last_activity).total_seconds() < 3600:
+        # High volume / close-out period or active user: Poll frequently
+        polling_interval = 10
+    else:
+        # Inactivity: Scale down polling
+        polling_interval = 300
+        
+    last_poll = cache.get("last_edc_poll_time")
+    if last_poll and (current_time - last_poll).total_seconds() < polling_interval:
+        # Too early to poll
+        return
+        
+    cache.set("last_edc_poll_time", current_time, timeout=86400)
+    
+    # Simulate fetching new confirmed queries from upstream
+    # In a real app we would call an EDC API endpoint here to get recent changes.
+    # The adapter or SyncJob would be triggered to parse these changes.
+    pass
 

@@ -230,6 +230,10 @@ class Coding(ClinicalEntity):
 class Query(ClinicalEntity):
     record = models.ForeignKey(Record, on_delete=models.CASCADE, related_name="queries")
     text = models.TextField()
+    status = models.CharField(max_length=50, default="OPEN") # e.g. OPEN, RESOLVED
+    previous_status = models.CharField(max_length=50, null=True, blank=True)
+    sync_status = models.CharField(max_length=50, default="CONFIRMED") # PENDING, CONFIRMED, SYNC_FAILED
+    last_sync_error = models.TextField(null=True, blank=True)
 
     def get_subject(self):
         return self.record.visit.subject

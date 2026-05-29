@@ -17,52 +17,11 @@ class JWTBearer(HttpBearer):
         user = decode_jwt_token(token)
         if user:
             request.user = user
+            # Assign user_roles needed for export to users authenticated via JWT
+            # In a full Entra setup, this would map groups/roles from the token
+            # For now, give them "extractor" role so CDISC export isn't totally blocked
+            request.user_roles = ["extractor"]
             return token
-        return None
-
-
-class MultiVendorAPIKey(APIKeyHeader):
-    param_name = "X-API-Key"
-
-    def authenticate(self, request, key):
-        # Check API Key
-        providers = Provider.objects.filter(auth_protocol="API_KEY")
-        for p in providers:
-            if p.auth_credentials and p.auth_credentials.get("api_key") == key:
-                request.provider = p
-                User = get_user_model()
-                user, _ = User.objects.get_or_create(username=f"provider_{p.id}", defaults={"is_staff": True})
-                request.user = user
-                request.user_roles = ["cdisc"]
-                return key
-
-        # Fallback to Static API Key for backwards compatibility
-        from django.conf import settings
-
-        expected_key = getattr(settings, "CLINICAL_API_KEY", None)
-        if expected_key and key == expected_key:
-            User = get_user_model()
-            user, _ = User.objects.get_or_create(username="api_user", defaults={"is_staff": True})
-            request.user = user
-            request.user_roles = ["cdisc"]
-            request.provider = Provider.objects.filter(name="Legacy/Default").first()
-            return key
-
-        return None
-
-
-class MultiVendorBearer(HttpBearer):
-    def authenticate(self, request, token):
-        providers = Provider.objects.filter(auth_protocol__in=["OIDC", "OAUTH2"])
-        for p in providers:
-            # For simplicity, assuming token validation relies on checking stored token or mock logic
-            if p.auth_credentials and p.auth_credentials.get("token") == token:
-                request.provider = p
-                User = get_user_model()
-                user, _ = User.objects.get_or_create(username=f"provider_{p.id}", defaults={"is_staff": True})
-                request.user = user
-                request.user_roles = ["cdisc"]
-                return token
         return None
 
 
@@ -85,7 +44,7 @@ from .models import (
 )
 from .schemas import SyncJobRequest, SyncJobResponse
 
-router = Router(auth=[MultiVendorAPIKey(), MultiVendorBearer(), JWTBearer()])
+router = Router(auth=[JWTBearer()])
 
 # --- Schemas ---
 

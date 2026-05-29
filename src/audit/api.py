@@ -5,9 +5,9 @@ from django.http import HttpResponse, HttpResponseForbidden
 from ninja import Router
 
 from .models import AuditLog
-from clinical.api import JWTBearer, MultiVendorBearer, MultiVendorAPIKey
+from clinical.api import JWTBearer
 
-router = Router(auth=[MultiVendorAPIKey(), MultiVendorBearer(), JWTBearer()])
+router = Router(auth=[JWTBearer()])
 
 
 @router.get("/export")

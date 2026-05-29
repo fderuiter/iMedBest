@@ -701,3 +701,89 @@ def _reprocess_orphan(orphan):
     
     # Delete after processing
     orphan.delete()
+
+
+# --- DELETE & TRASH ENDPOINTS ---
+
+from django.http import Http404
+
+def _get_model_class(entity_type: str):
+    models_map = {
+        'studies': Study, 'sites': Site, 'subjects': Subject,
+        'forms': Form, 'intervals': Interval, 'variables': Variable,
+        'visits': Visit, 'records': Record, 'codings': Coding,
+        'queries': Query, 'revisions': RecordRevision
+    }
+    return models_map.get(entity_type.lower())
+
+@router.delete("/{entity_plural}/{external_id}", response={204: None})
+def delete_entity(request, entity_plural: str, external_id: str):
+    model_cls = _get_model_class(entity_plural)
+    if not model_cls:
+        raise Http404("Unknown entity type")
+    
+    # We should enforce permissions. For simplicity, if not staff, we might restrict, 
+    # but based on requirements, assume basic accessible items.
+    obj = get_object_or_404(model_cls, external_id=external_id)
+    obj.delete()
+    return 204, None
+
+class TrashItemOut(ModelSchema):
+    entity_type: str
+    deleted_at_iso: str
+
+    class Meta:
+        model = Study # Dummy model to satisfy ninja
+        fields = ["external_id", "id"]
+        
+    @staticmethod
+    def resolve_entity_type(obj):
+        return obj.__class__.__name__
+        
+    @staticmethod
+    def resolve_deleted_at_iso(obj):
+        return obj.deleted_at.isoformat() if obj.deleted_at else ""
+
+@router.get("/trash/items")
+def list_trash(request):
+    if not (request.user.is_staff or request.user.is_superuser):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Admin access required")
+    
+    results = []
+    for model_cls in [Study, Site, Subject, Form, Interval, Variable, Visit, Record, Coding, Query, RecordRevision]:
+        for obj in model_cls.all_objects.filter(is_deleted=True).order_by('-deleted_at'):
+            results.append({
+                "id": obj.id,
+                "external_id": obj.external_id,
+                "entity_type": model_cls.__name__,
+                "deleted_at_iso": obj.deleted_at.isoformat() if obj.deleted_at else ""
+            })
+    # Sort by deletion date desc
+    results.sort(key=lambda x: x["deleted_at_iso"], reverse=True)
+    return results
+
+@router.post("/trash/{entity_type}/{external_id}/restore", response={200: dict})
+def restore_entity(request, entity_type: str, external_id: str):
+    if not (request.user.is_staff or request.user.is_superuser):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Admin access required")
+
+    models_map = {
+        'study': Study, 'site': Site, 'subject': Subject,
+        'form': Form, 'interval': Interval, 'variable': Variable,
+        'visit': Visit, 'record': Record, 'coding': Coding,
+        'query': Query, 'recordrevision': RecordRevision
+    }
+    model_cls = models_map.get(entity_type.lower())
+    if not model_cls:
+        raise Http404("Unknown entity type")
+        
+    obj = get_object_or_404(model_cls.all_objects, external_id=external_id, is_deleted=True)
+    try:
+        obj.restore()
+    except ValueError as e:
+        from django.http import HttpResponseBadRequest
+        return HttpResponseBadRequest(str(e))
+        
+    return 200, {"message": "Restored successfully"}

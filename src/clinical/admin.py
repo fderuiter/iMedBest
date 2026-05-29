@@ -29,3 +29,45 @@ class SyncTaskAdmin(admin.ModelAdmin):
     list_display = ('id', 'job', 'entity_type', 'hierarchy_level', 'status', 'retry_count', 'created_at')
     list_filter = ('status', 'entity_type', 'hierarchy_level')
     search_fields = ('id', 'job__id', 'error_message')
+
+from django.contrib.admin import SimpleListFilter
+
+class DeletedFilter(SimpleListFilter):
+    title = 'Is Deleted'
+    parameter_name = 'is_deleted'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('yes', 'Yes'),
+            ('no', 'No'),
+        )
+
+    def queryset(self, request, queryset):
+        if self.value() == 'yes':
+            return queryset.filter(is_deleted=True)
+        if self.value() == 'no':
+            return queryset.filter(is_deleted=False)
+        return queryset
+
+from .models import Study, Site, Subject
+
+class SoftDeleteAdmin(admin.ModelAdmin):
+    list_display = ('external_id', 'is_deleted', 'deleted_at', 'created_at')
+    list_filter = (DeletedFilter,)
+    search_fields = ('external_id',)
+    
+    def get_queryset(self, request):
+        return self.model.all_objects.all()
+
+@admin.register(Study)
+class StudyAdmin(SoftDeleteAdmin):
+    pass
+
+@admin.register(Site)
+class SiteAdmin(SoftDeleteAdmin):
+    pass
+
+@admin.register(Subject)
+class SubjectAdmin(SoftDeleteAdmin):
+    pass
+

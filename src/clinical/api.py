@@ -1,9 +1,10 @@
 # ruff: noqa: RUF012, ERA001
 
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
 from ninja.security import APIKeyHeader
-from django.conf import settings
+
 
 class StaticAPIKey(APIKeyHeader):
     param_name = "X-API-Key"
@@ -231,6 +232,30 @@ def get_accessible_subjects(user):
     return Subject.objects.filter(Q(site__study_id__in=auditor_study_ids) | Q(site_id__in=investigator_site_ids))
 
 # --- Endpoints ---
+
+@router.post("/sync/studies", response={202: JobStatusSchemaOut})
+def sync_studies_async(request, payload: list[StudySchemaIn]):
+    job = SyncJob.objects.create(
+        user=request.user,
+        status='PENDING'
+    )
+
+    task_objects = []
+    for study in payload:
+        task_objects.append(SyncTask(
+            job=job,
+            hierarchy_level=1,
+            entity_type='Study',
+            payload=study.dict(),
+            status='PENDING'
+        ))
+
+    SyncTask.objects.bulk_create(task_objects)
+
+    # Start orchestration
+    orchestrate_sync_job.delay(job.id, request.user.id)
+
+    return 202, job
 
 @router.post("/sync-jobs", response={202: SyncJobResponse})
 def create_sync_job(request, payload: SyncJobRequest):

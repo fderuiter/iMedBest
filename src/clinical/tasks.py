@@ -168,29 +168,51 @@ def process_single_task(self, task_id, user_id):
 
         payload = task.payload
         entity_type = task.entity_type
+        ext_id = payload.get("external_id")
 
-        if entity_type == 'Study':
-            sync_study(request, StudySchemaIn(**payload))
-        elif entity_type == 'Site':
-            sync_site(request, SiteSchemaIn(**payload))
-        elif entity_type == 'Subject':
-            sync_subject(request, SubjectSchemaIn(**payload))
-        elif entity_type == 'Form':
-            sync_form(request, FormSchemaIn(**payload))
-        elif entity_type == 'Interval':
-            sync_interval(request, IntervalSchemaIn(**payload))
-        elif entity_type == 'Variable':
-            sync_variable(request, VariableSchemaIn(**payload))
-        elif entity_type == 'Visit':
-            sync_visit(request, VisitSchemaIn(**payload))
-        elif entity_type == 'Record':
-            sync_record(request, RecordSchemaIn(**payload))
-        elif entity_type == 'Coding':
-            sync_coding(request, CodingSchemaIn(**payload))
-        elif entity_type == 'Query':
-            sync_query(request, QuerySchemaIn(**payload))
-        elif entity_type == 'RecordRevision':
-            sync_revision(request, RecordRevisionSchemaIn(**payload))
+        import redis
+        from django.conf import settings
+
+        lock = None
+        if ext_id:
+            try:
+                r = redis.from_url(settings.CELERY_BROKER_URL)
+                lock_id = f"sync-lock-{entity_type}-{ext_id}"
+                lock = r.lock(lock_id, timeout=300)
+                if not lock.acquire(blocking=False):
+                    raise Exception(f"Concurrent processing lock for {lock_id}")
+            except Exception as e:
+                if "Concurrent processing lock" in str(e):
+                    raise
+                # If redis fails for some reason other than lock, we just proceed
+                lock = None
+
+        try:
+            if entity_type == 'Study':
+                sync_study(request, StudySchemaIn(**payload))
+            elif entity_type == 'Site':
+                sync_site(request, SiteSchemaIn(**payload))
+            elif entity_type == 'Subject':
+                sync_subject(request, SubjectSchemaIn(**payload))
+            elif entity_type == 'Form':
+                sync_form(request, FormSchemaIn(**payload))
+            elif entity_type == 'Interval':
+                sync_interval(request, IntervalSchemaIn(**payload))
+            elif entity_type == 'Variable':
+                sync_variable(request, VariableSchemaIn(**payload))
+            elif entity_type == 'Visit':
+                sync_visit(request, VisitSchemaIn(**payload))
+            elif entity_type == 'Record':
+                sync_record(request, RecordSchemaIn(**payload))
+            elif entity_type == 'Coding':
+                sync_coding(request, CodingSchemaIn(**payload))
+            elif entity_type == 'Query':
+                sync_query(request, QuerySchemaIn(**payload))
+            elif entity_type == 'RecordRevision':
+                sync_revision(request, RecordRevisionSchemaIn(**payload))
+        finally:
+            if lock and lock.owned():
+                lock.release()
 
         task.status = 'COMPLETED'
         task.save(update_fields=['status'])

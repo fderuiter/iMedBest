@@ -38,7 +38,6 @@ from .models import (
     Visit,
 )
 from .schemas import SyncJobRequest, SyncJobResponse
-from .tasks import orchestrate_sync_job
 
 router = Router(auth=StaticAPIKey())
 
@@ -253,6 +252,21 @@ def get_accessible_subjects(user):
     investigator_site_ids = SiteMembership.objects.filter(user=user, role='site_investigator').values_list('site_id', flat=True)
     return Subject.objects.filter(Q(site__study_id__in=auditor_study_ids) | Q(site_id__in=investigator_site_ids))
 
+import json
+
+def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_obj) -> tuple[int, SyncJobResponse]:
+    payload_dict = json.loads(payload_obj.json())
+    job = SyncJob.objects.create(user=request.user, status='PENDING')
+    SyncTask.objects.create(
+        job=job,
+        hierarchy_level=hierarchy_level,
+        entity_type=entity_type,
+        payload=payload_dict,
+        status='PENDING'
+    )
+    status_url = f"/api/clinical/sync-jobs/{job.id}"
+    return 202, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
+
 # --- Endpoints ---
 
 @router.post("/sync-jobs", response={202: SyncJobResponse})
@@ -275,17 +289,18 @@ def create_sync_job(request, payload: SyncJobRequest):
 
     SyncTask.objects.bulk_create(task_objects)
 
-    # Start orchestration
-    orchestrate_sync_job.delay(job.id, request.user.id)
-
-    return 202, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued")
+    status_url = f"/api/clinical/sync-jobs/{job.id}"
+    return 202, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
 
 @router.get("/sync-jobs/{job_id}", response=JobStatusSchemaOut)
 def get_sync_job(request, job_id: str):
     return get_object_or_404(SyncJob, id=job_id, user=request.user)
 
 # L1: Study
-@router.post("/studies", response={200: StudySchemaOut, 202: dict})
+@router.post("/studies", response={202: SyncJobResponse})
+def api_sync_study(request, payload: StudySchemaIn):
+    return _queue_single_task(request, 1, 'Study', payload)
+
 def sync_study(request, payload: StudySchemaIn):
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
@@ -308,7 +323,10 @@ def list_studies(request):
 
 
 # L1: Site
-@router.post("/sites", response={200: SiteSchemaOut, 202: dict})
+@router.post("/sites", response={202: SyncJobResponse})
+def api_sync_site(request, payload: SiteSchemaIn):
+    return _queue_single_task(request, 1, 'Site', payload)
+
 def sync_site(request, payload: SiteSchemaIn):
     study = get_accessible_studies(request.user).filter(external_id=payload.study_ext_id).first()
     if not study:
@@ -336,7 +354,10 @@ def list_sites(request):
 
 
 # L2: Subject
-@router.post("/subjects", response={200: SubjectSchemaOut, 202: dict})
+@router.post("/subjects", response={202: SyncJobResponse})
+def api_sync_subject(request, payload: SubjectSchemaIn):
+    return _queue_single_task(request, 2, 'Subject', payload)
+
 def sync_subject(request, payload: SubjectSchemaIn):
     site = get_accessible_sites(request.user).filter(external_id=payload.site_ext_id).first()
     if not site:
@@ -364,7 +385,10 @@ def list_subjects(request):
 
 
 # L2: Form
-@router.post("/forms", response={200: FormSchemaOut, 202: dict})
+@router.post("/forms", response={202: SyncJobResponse})
+def api_sync_form(request, payload: FormSchemaIn):
+    return _queue_single_task(request, 2, 'Form', payload)
+
 def sync_form(request, payload: FormSchemaIn):
     study = get_accessible_studies(request.user).filter(external_id=payload.study_ext_id).first()
     if not study:
@@ -392,7 +416,10 @@ def list_forms(request):
 
 
 # L2: Interval
-@router.post("/intervals", response={200: IntervalSchemaOut, 202: dict})
+@router.post("/intervals", response={202: SyncJobResponse})
+def api_sync_interval(request, payload: IntervalSchemaIn):
+    return _queue_single_task(request, 2, 'Interval', payload)
+
 def sync_interval(request, payload: IntervalSchemaIn):
     study = get_accessible_studies(request.user).filter(external_id=payload.study_ext_id).first()
     if not study:
@@ -420,7 +447,10 @@ def list_intervals(request):
 
 
 # L3: Variable
-@router.post("/variables", response={200: VariableSchemaOut, 202: dict})
+@router.post("/variables", response={202: SyncJobResponse})
+def api_sync_variable(request, payload: VariableSchemaIn):
+    return _queue_single_task(request, 3, 'Variable', payload)
+
 def sync_variable(request, payload: VariableSchemaIn):
     form = Form.objects.filter(study__in=get_accessible_studies(request.user)).filter(external_id=payload.form_ext_id).first()
     if not form:
@@ -448,7 +478,10 @@ def list_variables(request):
 
 
 # L3: Visit
-@router.post("/visits", response={200: VisitSchemaOut, 202: dict})
+@router.post("/visits", response={202: SyncJobResponse})
+def api_sync_visit(request, payload: VisitSchemaIn):
+    return _queue_single_task(request, 3, 'Visit', payload)
+
 def sync_visit(request, payload: VisitSchemaIn):
     subject = get_accessible_subjects(request.user).filter(external_id=payload.subject_ext_id).first()
     if not subject:
@@ -480,7 +513,10 @@ def list_visits(request):
 
 
 # L4: Record
-@router.post("/records", response={200: RecordSchemaOut, 202: dict})
+@router.post("/records", response={202: SyncJobResponse})
+def api_sync_record(request, payload: RecordSchemaIn):
+    return _queue_single_task(request, 4, 'Record', payload)
+
 def sync_record(request, payload: RecordSchemaIn):
     visit = Visit.objects.filter(subject__in=get_accessible_subjects(request.user)).filter(external_id=payload.visit_ext_id).first()
     if not visit:
@@ -513,7 +549,10 @@ def list_records(request):
 
 
 # L4: Coding
-@router.post("/codings", response={200: CodingSchemaOut, 202: dict})
+@router.post("/codings", response={202: SyncJobResponse})
+def api_sync_coding(request, payload: CodingSchemaIn):
+    return _queue_single_task(request, 4, 'Coding', payload)
+
 def sync_coding(request, payload: CodingSchemaIn):
     record = Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)).filter(external_id=payload.record_ext_id).first()
     if not record:
@@ -541,7 +580,10 @@ def list_codings(request):
 
 
 # L4: Query
-@router.post("/queries", response={200: QuerySchemaOut, 202: dict})
+@router.post("/queries", response={202: SyncJobResponse})
+def api_sync_query(request, payload: QuerySchemaIn):
+    return _queue_single_task(request, 4, 'Query', payload)
+
 def sync_query(request, payload: QuerySchemaIn):
     record = Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)).filter(external_id=payload.record_ext_id).first()
     if not record:
@@ -569,7 +611,10 @@ def list_queries(request):
 
 
 # L4: RecordRevision
-@router.post("/revisions", response={200: RecordRevisionSchemaOut, 202: dict})
+@router.post("/revisions", response={202: SyncJobResponse})
+def api_sync_revision(request, payload: RecordRevisionSchemaIn):
+    return _queue_single_task(request, 4, 'RecordRevision', payload)
+
 def sync_revision(request, payload: RecordRevisionSchemaIn):
     record = Record.objects.filter(visit__subject__in=get_accessible_subjects(request.user)).filter(external_id=payload.record_ext_id).first()
     if not record:

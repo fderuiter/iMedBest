@@ -1,7 +1,20 @@
 import pytest
 from django.test import override_settings
 
-from .models import Record
+from .models import Record, SyncJob
+from clinical.management.commands.run_sync_worker import Command as WorkerCommand
+
+
+def process_all_jobs():
+    worker = WorkerCommand()
+    while True:
+        jobs = SyncJob.objects.filter(status__in=['PENDING', 'PROCESSING'])
+        processed = False
+        for job in jobs:
+            if worker.process_job(job):
+                processed = True
+        if not processed:
+            break
 
 
 @pytest.mark.django_db
@@ -13,14 +26,14 @@ def test_multi_level_data_import(client):
         data={"external_id": "study-1", "name": "Study 1"},
         content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
-    assert study_resp.status_code == 200
+    assert study_resp.status_code == 202
 
     site_resp = client.post(
         "/api/clinical/sites",
         data={"external_id": "site-1", "study_ext_id": "study-1", "name": "Site 1"},
         content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
-    assert site_resp.status_code == 200
+    assert site_resp.status_code == 202
 
     # Level 2
     subject_resp = client.post(
@@ -28,21 +41,21 @@ def test_multi_level_data_import(client):
         data={"external_id": "sub-1", "site_ext_id": "site-1", "name": "Subject 1"},
         content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
-    assert subject_resp.status_code == 200
+    assert subject_resp.status_code == 202
 
     form_resp = client.post(
         "/api/clinical/forms",
         data={"external_id": "form-1", "study_ext_id": "study-1", "name": "Form 1"},
         content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
-    assert form_resp.status_code == 200
+    assert form_resp.status_code == 202
 
     int_resp = client.post(
         "/api/clinical/intervals",
         data={"external_id": "int-1", "study_ext_id": "study-1", "name": "Interval 1"},
         content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
-    assert int_resp.status_code == 200
+    assert int_resp.status_code == 202
 
     # Level 3
     var_resp = client.post(
@@ -50,14 +63,14 @@ def test_multi_level_data_import(client):
         data={"external_id": "var-1", "form_ext_id": "form-1", "name": "Variable 1"},
         content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
-    assert var_resp.status_code == 200
+    assert var_resp.status_code == 202
 
     visit_resp = client.post(
         "/api/clinical/visits",
         data={"external_id": "visit-1", "subject_ext_id": "sub-1", "interval_ext_id": "int-1"},
         content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
-    assert visit_resp.status_code == 200
+    assert visit_resp.status_code == 202
 
     # Level 4
     record_resp = client.post(
@@ -65,7 +78,9 @@ def test_multi_level_data_import(client):
         data={"external_id": "rec-1", "visit_ext_id": "visit-1", "variable_ext_id": "var-1", "value": "120/80"},
         content_type="application/json", HTTP_X_API_KEY="test_api_key_123",
     )
-    assert record_resp.status_code == 200
+    assert record_resp.status_code == 202
+
+    process_all_jobs()
 
     record = Record.objects.get(external_id="rec-1")
     assert record.value == "120/80"
@@ -110,6 +125,8 @@ def test_longitudinal_reconstruction(client):
         "clinical_timestamp": "2024-01-06T10:00:00Z",
         "source_sequence": 1
     }, content_type="application/json", HTTP_X_API_KEY="test_api_key_123")
+
+    process_all_jobs()
 
     # Check offsets
     rec_day10 = Record.objects.get(external_id="rec-day10")

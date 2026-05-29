@@ -16,3 +16,4 @@ class SyncJobResponse(BaseModel):
     job_id: UUID
     status: str
     message: str
+    status_url: str

@@ -48,9 +48,12 @@ class Command(BaseCommand):
         # For VS (Record), order by clinical_timestamp then set source_sequence
         for subject in subjects:
             records = Record.objects.filter(visit__subject=subject).order_by('clinical_timestamp', 'created_at')
+            records_to_update_seq = []
             for seq, rec in enumerate(records, start=1):
                 if rec.source_sequence is None:
                     rec.source_sequence = seq
-                    rec.save(update_fields=['source_sequence'])
+                    records_to_update_seq.append(rec)
+            if records_to_update_seq:
+                Record.objects.bulk_update(records_to_update_seq, ['source_sequence'])
 
         self.stdout.write("Done.")

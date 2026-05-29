@@ -13,3 +13,9 @@ repos:
       - id: ruff
         args: [ --fix ]
       - id: ruff-format
+
+  - repo: https://github.com/google/osv-scanner
+    rev: v2.3.8
+    hooks:
+      - id: osv-scanner
+        args: ["--lockfile=uv.lock"]

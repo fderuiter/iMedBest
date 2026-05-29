@@ -3,22 +3,56 @@
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
-from ninja.security import APIKeyHeader
 
 
-class StaticAPIKey(APIKeyHeader):
+
+
+from ninja.security import APIKeyHeader, HttpBearer
+from django.contrib.auth import get_user_model
+from clinical.models import Provider
+
+class MultiVendorAPIKey(APIKeyHeader):
     param_name = "X-API-Key"
 
     def authenticate(self, request, key):
+        # Check API Key
+        providers = Provider.objects.filter(auth_protocol='API_KEY')
+        for p in providers:
+            if p.auth_credentials and p.auth_credentials.get("api_key") == key:
+                request.provider = p
+                User = get_user_model()
+                user, _ = User.objects.get_or_create(username=f"provider_{p.id}", defaults={"is_staff": True})
+                request.user = user
+                request.user_roles = ['cdisc']
+                return key
+
+        # Fallback to Static API Key for backwards compatibility
+        from django.conf import settings
         expected_key = getattr(settings, "CLINICAL_API_KEY", None)
         if expected_key and key == expected_key:
-            from django.contrib.auth import get_user_model
             User = get_user_model()
             user, _ = User.objects.get_or_create(username="api_user", defaults={"is_staff": True})
             request.user = user
             request.user_roles = ['cdisc']
+            request.provider = Provider.objects.filter(name="Legacy/Default").first()
             return key
+            
         return None
+
+class MultiVendorBearer(HttpBearer):
+    def authenticate(self, request, token):
+        providers = Provider.objects.filter(auth_protocol__in=['OIDC', 'OAUTH2'])
+        for p in providers:
+            # For simplicity, assuming token validation relies on checking stored token or mock logic
+            if p.auth_credentials and p.auth_credentials.get("token") == token:
+                request.provider = p
+                User = get_user_model()
+                user, _ = User.objects.get_or_create(username=f"provider_{p.id}", defaults={"is_staff": True})
+                request.user = user
+                request.user_roles = ['cdisc']
+                return token
+        return None
+
 
 from .export import generate_cdisc_export
 from .models import (
@@ -39,7 +73,7 @@ from .models import (
 )
 from .schemas import SyncJobRequest, SyncJobResponse
 
-router = Router(auth=StaticAPIKey())
+router = Router(auth=[MultiVendorAPIKey(), MultiVendorBearer()])
 
 # --- Schemas ---
 
@@ -256,7 +290,7 @@ import json
 
 def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_obj) -> tuple[int, SyncJobResponse]:
     payload_dict = json.loads(payload_obj.json())
-    job = SyncJob.objects.create(user=request.user, status='PENDING')
+    job = SyncJob.objects.create(user=request.user, provider=getattr(request, "provider", None), status='PENDING')
     SyncTask.objects.create(
         job=job,
         hierarchy_level=hierarchy_level,
@@ -273,6 +307,7 @@ def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_
 def create_sync_job(request, payload: SyncJobRequest):
     job = SyncJob.objects.create(
         user=request.user,
+        provider=getattr(request, "provider", None),
         status='PENDING'
     )
 
@@ -662,7 +697,9 @@ class BufferedOrphanSchemaOut(ModelSchema):
 def list_orphans(request):
     return BufferedOrphan.objects.all()
 
+
 from django.db import transaction
+from .adapter import MultiVendorAdapter
 
 def check_and_process_orphans(parent_external_id):
     orphans = list(BufferedOrphan.objects.filter(missing_parent_id=parent_external_id))
@@ -671,37 +708,16 @@ def check_and_process_orphans(parent_external_id):
             with transaction.atomic():
                 _reprocess_orphan(orphan)
         except Exception as e:
+            print('ORPHAN EXCEPTION:', e)
             pass
 
 def _reprocess_orphan(orphan):
-    req = type('DummyRequest', (object,), {'user': orphan.user, 'user_roles': ['cdisc']})()
+    req = type('DummyRequest', (object,), {'user': orphan.user, 'provider': orphan.provider, 'user_roles': ['cdisc']})()
     
-    mapping = {
-        'Site': (sync_site, SiteSchemaIn),
-        'Subject': (sync_subject, SubjectSchemaIn),
-        'Form': (sync_form, FormSchemaIn),
-        'Interval': (sync_interval, IntervalSchemaIn),
-        'Variable': (sync_variable, VariableSchemaIn),
-        'Visit': (sync_visit, VisitSchemaIn),
-        'Record': (sync_record, RecordSchemaIn),
-        'Coding': (sync_coding, CodingSchemaIn),
-        'Query': (sync_query, QuerySchemaIn),
-        'RecordRevision': (sync_revision, RecordRevisionSchemaIn),
-    }
+    adapter = MultiVendorAdapter(orphan.provider)
+    adapter.sync_entity(req, orphan.entity_type, orphan.payload)
     
-    if orphan.entity_type not in mapping:
-        orphan.delete()
-        return
-        
-    func, schema_cls = mapping[orphan.entity_type]
-    payload = schema_cls(**orphan.payload)
-    
-    # Process
-    func(req, payload)
-    
-    # Delete after processing
     orphan.delete()
-
 
 # --- DELETE & TRASH ENDPOINTS ---
 

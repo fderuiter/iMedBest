@@ -71,3 +71,11 @@ class SiteAdmin(SoftDeleteAdmin):
 class SubjectAdmin(SoftDeleteAdmin):
     pass
 
+
+from .models import Provider
+
+@admin.register(Provider)
+class ProviderAdmin(admin.ModelAdmin):
+    list_display = ('name', 'api_endpoint', 'auth_protocol')
+    search_fields = ('name', 'api_endpoint')
+    list_filter = ('auth_protocol',)

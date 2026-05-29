@@ -230,3 +230,8 @@ def check_level_completion(job_id, level, user_id):
     else:
         job.status = 'COMPLETED'
         job.save(update_fields=['status'])
+
+@shared_task
+def purge_trash_task(days=30):
+    from django.core.management import call_command
+    call_command('purge_trash', days=days)

@@ -1,8 +1,30 @@
 import uuid
 
-from django.db import models
+from django.db import models, transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils import timezone
+
+
+class ClinicalEntityQuerySet(models.QuerySet):
+    def delete(self):
+        for obj in self:
+            obj.delete()
+
+    def hard_delete(self):
+        return super().delete()
+
+    def restore(self):
+        for obj in self:
+            obj.restore()
+
+class ActiveManager(models.Manager):
+    def get_queryset(self):
+        return ClinicalEntityQuerySet(self.model, using=self._db).filter(is_deleted=False)
+
+class AllManager(models.Manager):
+    def get_queryset(self):
+        return ClinicalEntityQuerySet(self.model, using=self._db)
 
 
 class ClinicalEntity(models.Model):
@@ -29,12 +51,59 @@ class ClinicalEntity(models.Model):
     source_sequence = models.IntegerField(null=True, blank=True)
     offset_days = models.IntegerField(null=True, blank=True)
 
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    objects = ActiveManager()
+    all_objects = AllManager()
+
     class Meta:
         abstract = True
 
+    def delete(self, using=None, keep_parents=False, deleted_at=None):
+        if not self.is_deleted:
+            self.is_deleted = True
+            self.deleted_at = deleted_at or timezone.now()
+            self.save(update_fields=['is_deleted', 'deleted_at', 'updated_at'])
+
+            # Cascade to children
+            for related_object in self._meta.related_objects:
+                if related_object.on_delete == models.CASCADE:
+                    # Dynamically fetch children
+                    related_model = related_object.related_model
+                    if hasattr(related_model, 'all_objects'):
+                        filter_kwargs = {related_object.field.name: self}
+                        for child in related_model.all_objects.filter(**filter_kwargs, is_deleted=False):
+                            child.delete(deleted_at=self.deleted_at)
+
+    def restore(self):
+        if self.is_deleted:
+            # Check if parent is deleted
+            for field in self._meta.fields:
+                if isinstance(field, models.ForeignKey) and field.remote_field.on_delete == models.CASCADE:
+                    parent = getattr(self, field.name)
+                    if parent and getattr(parent, 'is_deleted', False):
+                        raise ValueError(f"Cannot restore {self._meta.model_name} because its parent {field.name} is deleted.")
+
+            target_deleted_at = self.deleted_at
+
+            self.is_deleted = False
+            self.deleted_at = None
+            self.save(update_fields=['is_deleted', 'deleted_at', 'updated_at'])
+
+            # Restore children that were deleted at exactly the same time
+            if target_deleted_at:
+                for related_object in self._meta.related_objects:
+                    if related_object.on_delete == models.CASCADE:
+                        related_model = related_object.related_model
+                        if hasattr(related_model, 'all_objects'):
+                            filter_kwargs = {related_object.field.name: self}
+                            for child in related_model.all_objects.filter(**filter_kwargs, is_deleted=True, deleted_at=target_deleted_at):
+                                child.restore()
+
     def save(self, *args, **kwargs):
         if self.pk is not None:
-            orig = self.__class__.objects.get(pk=self.pk)
+            orig = self.__class__.all_objects.get(pk=self.pk)
             if orig.created_by_id and self.created_by_id != orig.created_by_id:
                 self.created_by_id = orig.created_by_id
 

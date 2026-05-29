@@ -1,5 +1,6 @@
 from django.contrib import admin
 from .models import OutboundEvent, DeliveryAttempt, Subscription
+from .tasks import process_delivery_attempt
 
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
@@ -20,6 +21,12 @@ class DeliveryAttemptAdmin(admin.ModelAdmin):
     actions = ['retry_failed']
 
     def retry_failed(self, request, queryset):
-        updated = queryset.filter(status='FAILED').update(status='PENDING', error_message=None)
-        self.message_user(request, f"Marked {updated} failed attempts as PENDING for retry.")
+        failed_attempts = list(queryset.filter(status='FAILED'))
+        for attempt in failed_attempts:
+            attempt.status = 'PENDING'
+            attempt.error_message = None
+            attempt.save(update_fields=['status', 'error_message'])
+            process_delivery_attempt.delay(attempt.id)
+            
+        self.message_user(request, f"Marked {len(failed_attempts)} failed attempts as PENDING and queued for retry.")
     retry_failed.short_description = "Retry selected failed deliveries"

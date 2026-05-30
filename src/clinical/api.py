@@ -18,6 +18,9 @@ class JWTBearer(HttpBearer):
         studyKey = request.headers.get("studyKey") or request.GET.get("studyKey")
         siteKey = request.headers.get("siteKey") or request.GET.get("siteKey")
 
+        if not studyKey and hasattr(request, "resolver_match") and request.resolver_match:
+            studyKey = request.resolver_match.kwargs.get("studyKey")
+
         if not studyKey and not siteKey:
             raise HttpError(400, "Missing required tenant context identifier: studyKey or siteKey")
 
@@ -1182,3 +1185,129 @@ def restore_entity(request, entity_type: str, external_id: str):
         return HttpResponseBadRequest(str(e))
 
     return 200, {"message": "Restored successfully"}
+
+
+v1_edc_router = Router(auth=[JWTBearer()])
+
+def v1_queue_single_task(request, hierarchy_level: int, entity_type: str, payload_obj) -> tuple[int, Any]:
+    if not (request.user.is_staff or request.user.is_superuser):
+        from users.models import SiteMembership
+
+        if not SiteMembership.objects.filter(user=request.user, role="site_investigator").exists():
+            raise PermissionDenied("Clinical Auditors have read-only access.")
+
+    from django.db import transaction
+    from clinical.adapter import MultiVendorAdapter
+
+    payload_dict = json.loads(payload_obj.json())
+    provider = getattr(request, "provider", None)
+    adapter = MultiVendorAdapter(provider)
+
+    try:
+        with transaction.atomic():
+            job = SyncJob.objects.create(user=request.user, provider=provider, status="COMPLETED")
+            SyncTask.objects.create(
+                job=job,
+                hierarchy_level=hierarchy_level,
+                entity_type=entity_type,
+                payload=payload_dict,
+                status="COMPLETED",
+            )
+            result = adapter.sync_entity(request, entity_type, payload_dict)
+
+        if isinstance(result, tuple) and result[0] == 202:
+            return 202, {"message": result[1].get("message", "Buffered")}
+
+        status_url = f"/api/clinical/sync-jobs/{job.id}"
+        return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync completed", status_url=status_url)
+    except Exception as e:
+        return 400, {"message": f"Sync failed. No data was saved. Error: {str(e)}"}
+
+@v1_edc_router.post("/{studyKey}/studies", response={200: SyncJobResponse, 202: dict, 400: dict})
+def v1_api_sync_study(request, studyKey: str, payload: StudySchemaIn):
+    return v1_queue_single_task(request, 1, "Study", payload)
+
+@v1_edc_router.get("/{studyKey}/studies", response=list[StudySchemaOut])
+def v1_list_studies(request, studyKey: str):
+    return list_studies(request)
+
+@v1_edc_router.post("/{studyKey}/sites", response={200: SyncJobResponse, 202: dict, 400: dict})
+def v1_api_sync_site(request, studyKey: str, payload: SiteSchemaIn):
+    return v1_queue_single_task(request, 1, "Site", payload)
+
+@v1_edc_router.get("/{studyKey}/sites", response=list[SiteSchemaOut])
+def v1_list_sites(request, studyKey: str):
+    return list_sites(request)
+
+@v1_edc_router.post("/{studyKey}/subjects", response={200: SyncJobResponse, 202: dict, 400: dict})
+def v1_api_sync_subject(request, studyKey: str, payload: SubjectSchemaIn):
+    return v1_queue_single_task(request, 2, "Subject", payload)
+
+@v1_edc_router.get("/{studyKey}/subjects", response=list[SubjectSchemaOut])
+def v1_list_subjects(request, studyKey: str):
+    return list_subjects(request)
+
+@v1_edc_router.post("/{studyKey}/forms", response={200: SyncJobResponse, 202: dict, 400: dict})
+def v1_api_sync_form(request, studyKey: str, payload: FormSchemaIn):
+    return v1_queue_single_task(request, 2, "Form", payload)
+
+@v1_edc_router.get("/{studyKey}/forms", response=list[FormSchemaOut])
+def v1_list_forms(request, studyKey: str):
+    return list_forms(request)
+
+@v1_edc_router.post("/{studyKey}/intervals", response={200: SyncJobResponse, 202: dict, 400: dict})
+def v1_api_sync_interval(request, studyKey: str, payload: IntervalSchemaIn):
+    return v1_queue_single_task(request, 2, "Interval", payload)
+
+@v1_edc_router.get("/{studyKey}/intervals", response=list[IntervalSchemaOut])
+def v1_list_intervals(request, studyKey: str):
+    return list_intervals(request)
+
+@v1_edc_router.post("/{studyKey}/variables", response={200: SyncJobResponse, 202: dict, 400: dict})
+def v1_api_sync_variable(request, studyKey: str, payload: VariableSchemaIn):
+    return v1_queue_single_task(request, 3, "Variable", payload)
+
+@v1_edc_router.get("/{studyKey}/variables", response=list[VariableSchemaOut])
+def v1_list_variables(request, studyKey: str):
+    return list_variables(request)
+
+@v1_edc_router.post("/{studyKey}/visits", response={200: SyncJobResponse, 202: dict, 400: dict})
+def v1_api_sync_visit(request, studyKey: str, payload: VisitSchemaIn):
+    return v1_queue_single_task(request, 3, "Visit", payload)
+
+@v1_edc_router.get("/{studyKey}/visits", response=list[VisitSchemaOut])
+def v1_list_visits(request, studyKey: str):
+    return list_visits(request)
+
+@v1_edc_router.post("/{studyKey}/records", response={200: SyncJobResponse, 202: dict, 400: dict})
+def v1_api_sync_record(request, studyKey: str, payload: RecordSchemaIn):
+    return v1_queue_single_task(request, 4, "Record", payload)
+
+@v1_edc_router.get("/{studyKey}/records", response=list[RecordSchemaOut])
+def v1_list_records(request, studyKey: str):
+    return list_records(request)
+
+@v1_edc_router.post("/{studyKey}/codings", response={200: SyncJobResponse, 202: dict, 400: dict})
+def v1_api_sync_coding(request, studyKey: str, payload: CodingSchemaIn):
+    return v1_queue_single_task(request, 4, "Coding", payload)
+
+@v1_edc_router.get("/{studyKey}/codings", response=list[CodingSchemaOut])
+def v1_list_codings(request, studyKey: str):
+    return list_codings(request)
+
+@v1_edc_router.post("/{studyKey}/queries", response={200: SyncJobResponse, 202: dict, 400: dict})
+def v1_api_sync_query(request, studyKey: str, payload: QuerySchemaIn):
+    return v1_queue_single_task(request, 4, "Query", payload)
+
+@v1_edc_router.get("/{studyKey}/queries", response=list[QuerySchemaOut])
+def v1_list_queries(request, studyKey: str):
+    return list_queries(request)
+
+@v1_edc_router.post("/{studyKey}/revisions", response={200: SyncJobResponse, 202: dict, 400: dict})
+def v1_api_sync_revision(request, studyKey: str, payload: RecordRevisionSchemaIn):
+    return v1_queue_single_task(request, 4, "RecordRevision", payload)
+
+@v1_edc_router.get("/{studyKey}/revisions", response=list[RecordRevisionSchemaOut])
+def v1_list_revisions(request, studyKey: str):
+    return list_revisions(request)
+

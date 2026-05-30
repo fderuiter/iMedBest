@@ -147,22 +147,29 @@ def test_longitudinal_reconstruction(client):
     # Check export order (source sequence priorities)
     resp = client.get("/api/clinical/export/cdisc", **headers)
     assert resp.status_code == 200
+    job_id = resp.json()["job_id"]
+    
+    resp_dl = client.get(f"/api/clinical/export/cdisc/{job_id}/download", **headers)
+    if resp_dl.status_code != 200:
+        from clinical.models import ExportJob
+        job = ExportJob.objects.get(id=job_id)
+        print("FAILED JOB:", job.status, job.error_message)
+    assert resp_dl.status_code == 200
 
-    import csv
     import io
     import zipfile
+    import xml.etree.ElementTree as ET
 
-    z = zipfile.ZipFile(io.BytesIO(resp.content))
-    vs_csv = z.read("VS.csv").decode('utf-8').splitlines()
-    reader = csv.DictReader(vs_csv)
-    rows = list(reader)
-
-    assert len(rows) == 2
-    # Ensure ordered by source_sequence: rec-day5 then rec-day10
-    assert rows[0]["VSORRES"] == "85"
-    assert rows[0]["VSSEQ"] == "1"
-    assert rows[1]["VSORRES"] == "90"
-    assert rows[1]["VSSEQ"] == "2"
+    z = zipfile.ZipFile(io.BytesIO(resp_dl.content))
+    xml_data = z.read("cdisc_export.xml").decode('utf-8')
+    root = ET.fromstring(xml_data)
+    
+    ns = {"odm": "http://www.cdisc.org/ns/odm/v1.3"}
+    item_datas = root.findall(".//odm:ItemData", ns)
+    
+    # We expect the ordering to match the source_sequence: rec-day5 then rec-day10
+    values = [item.get("Value") for item in item_datas if item.get("ItemOID") == "var-2"]
+    assert values == ["85", "90"]
 
 @pytest.mark.django_db
 def test_sync_job_endpoint(client):

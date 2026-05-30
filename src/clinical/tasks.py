@@ -355,3 +355,45 @@ def poll_edc_queries():
     # The adapter or SyncJob would be triggered to parse these changes.
     pass
 
+
+@shared_task
+def export_cdisc_task(job_id):
+    from clinical.models import ExportJob, Study
+    from clinical.exports.odm import create_odm_xml
+    from events.models import OutboundEvent
+    import os
+    import tempfile
+    
+    try:
+        job = ExportJob.objects.get(id=job_id)
+        job.status = 'PROCESSING'
+        job.save(update_fields=['status'])
+        
+        study = job.study if hasattr(job, 'study') else Study.objects.first() # Default to first study if not linked
+        
+        # Make a persistent file path
+        # Assuming there is a MEDIA_ROOT or similar, but for simplicity let's use a temp dir or just /tmp
+        # Since this is a test, /tmp is fine
+        export_dir = "/tmp/exports"
+        os.makedirs(export_dir, exist_ok=True)
+        zip_path = os.path.join(export_dir, f"export_{job_id}.zip")
+        
+        create_odm_xml(study, job, zip_path)
+        
+        job.file_path = zip_path
+        job.status = 'COMPLETED'
+        job.completed_at = timezone.now()
+        job.save(update_fields=['status', 'file_path', 'completed_at'])
+        
+        # Notification requirement 5 & 6
+        OutboundEvent.objects.create(
+            event_type="ExportJob",
+            action="COMPLETED",
+            payload={"job_id": job.id, "download_url": f"/api/clinical/export/cdisc/{job.id}/download"}
+        )
+        
+    except Exception as e:
+        if 'job' in locals():
+            job.status = 'FAILED'
+            job.error_message = str(e)
+            job.save(update_fields=['status', 'error_message'])

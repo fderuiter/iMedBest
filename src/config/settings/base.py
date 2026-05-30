@@ -51,6 +51,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "audit.middleware.AuditMiddleware",
+    "clinical.api.StripSyncMetadataMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"

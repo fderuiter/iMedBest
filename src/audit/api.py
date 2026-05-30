@@ -54,3 +54,37 @@ def export_audit_log(request, date_from: str = None, date_to: str = None, user_i
     response = HttpResponse(buffer.getvalue(), content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="audit_log.csv"'
     return response
+
+@router.get("/compliance-matrix")
+def export_compliance_matrix(request):
+    import io
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer)
+    
+    p.setFont("Helvetica-Bold", 16)
+    p.drawString(100, 800, "21 CFR Part 11 Compliance Matrix")
+    
+    p.setFont("Helvetica", 12)
+    y = 750
+    matrix = [
+        ("11.10(a) Validation of Systems", "Automated Compliance Report"),
+        ("11.10(b) Accurate Copies", "Dynamic CDISC Export"),
+        ("11.10(c) Protection of Records", "Immutable Audit Logs"),
+        ("11.10(e) Audit Trails", "Audit Log with Reason for Change"),
+        ("11.50(a) Signature Manifestation", "Signature Cryptographic Hash"),
+        ("11.200(a) Electronic Signatures", "Re-authentication Flow"),
+    ]
+
+    for clause, feature in matrix:
+        p.drawString(100, y, f"{clause}: {feature}")
+        y -= 30
+        
+    p.showPage()
+    p.save()
+    
+    buffer.seek(0)
+    response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="compliance_matrix.pdf"'
+    return response

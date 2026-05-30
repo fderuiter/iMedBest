@@ -85,6 +85,9 @@ def log_save(sender, instance, created, **kwargs):
             old_value = instance._old_data.get(key)
             if str(old_value) != str(value):
                 changes[key] = {"old": str(old_value), "new": str(value)}
+                
+    if hasattr(instance, "reason_for_change") and getattr(instance, "reason_for_change"):
+        changes["reason_for_change"] = getattr(instance, "reason_for_change")
 
     create_audit_log(action, instance, changes if changes else None)
 

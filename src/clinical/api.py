@@ -1,5 +1,8 @@
 # ruff: noqa: RUF012, ERA001
 
+from typing import Any, Optional
+import json
+
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
@@ -271,6 +274,7 @@ class VisitSchemaOut(ModelSchema):
 class RecordSchemaIn(ModelSchema):
     visit_ext_id: str
     variable_ext_id: str
+    reason_for_change: Optional[str] = None
 
     class Meta:
         model = Record
@@ -380,6 +384,7 @@ class RecordRevisionSchemaOut(ModelSchema):
             "id",
             "external_id",
             "value",
+            "reason_for_change",
             "record",
             "created_at",
             "updated_at",
@@ -818,6 +823,13 @@ def sync_record(request, payload: RecordSchemaIn):
             entity_type="Record", missing_parent_id=payload.variable_ext_id, payload=payload.dict(), user=request.user
         )
         return 202, {"message": "Buffered due to missing parent"}
+
+    existing_record = Record.objects.filter(external_id=payload.external_id).first()
+    if existing_record and existing_record.value != payload.value:
+        if not payload.reason_for_change:
+            from ninja.errors import HttpError
+            raise HttpError(400, "Reason for change is mandatory for modifications.")
+
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
         "source_sequence": payload.source_sequence,
@@ -826,9 +838,19 @@ def sync_record(request, payload: RecordSchemaIn):
         "value": payload.value,
         "updated_by": request.user,
     }
-    record, _ = Record.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
+    
+    if existing_record:
+        for k, v in defaults.items():
+            setattr(existing_record, k, v)
+        existing_record.reason_for_change = payload.reason_for_change
+        existing_record.save()
+        record = existing_record
+    else:
+        create_kwargs = {**defaults, "external_id": payload.external_id, "created_by": request.user}
+        record = Record(**create_kwargs)
+        record.reason_for_change = payload.reason_for_change
+        record.save()
+
     check_and_process_orphans(record.external_id)
     return record
 
@@ -1311,3 +1333,50 @@ def v1_api_sync_revision(request, studyKey: str, payload: RecordRevisionSchemaIn
 def v1_list_revisions(request, studyKey: str):
     return list_revisions(request)
 
+
+from ninja import Schema
+from .models import ElectronicSignature
+
+class SignatureSchemaIn(Schema):
+    record_revision_ext_id: str
+    reauth_token: str
+
+class SignatureSchemaOut(ModelSchema):
+    class Meta:
+        model = ElectronicSignature
+        fields = ["id", "signature_hash", "signed_at"]
+
+@router.post("/signatures", response={200: SignatureSchemaOut, 400: dict, 401: dict, 403: dict})
+def create_signature(request, payload: SignatureSchemaIn):
+    from users.jwt import decode_jwt_token_full
+    import datetime
+    import hashlib
+
+    user, token_payload = decode_jwt_token_full(payload.reauth_token)
+    if not user:
+        return 401, {"message": "Invalid re-authentication token."}
+    
+    if user != request.user:
+        return 403, {"message": "Re-authentication user mismatch."}
+
+    auth_time = token_payload.get("auth_time") or token_payload.get("iat")
+    if not auth_time:
+        return 400, {"message": "Token missing authentication timestamp."}
+
+    current_time = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    
+    if current_time - auth_time > 300:
+        return 400, {"message": "Re-authentication timestamp is too old."}
+
+    revision = get_object_or_404(RecordRevision, external_id=payload.record_revision_ext_id, record__visit__subject__in=get_accessible_subjects(request))
+
+    hash_input = f"{revision.id}:{revision.value}:{user.id}:{auth_time}".encode('utf-8')
+    sig_hash = hashlib.sha256(hash_input).hexdigest()
+
+    sig = ElectronicSignature.objects.create(
+        record_revision=revision,
+        user=user,
+        signature_hash=sig_hash
+    )
+
+    return sig

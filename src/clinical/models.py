@@ -191,6 +191,7 @@ class Interval(ClinicalEntity):
 
 # Level 3
 class Variable(ClinicalEntity):
+    cdisc_domain = models.CharField(max_length=10, default="VS")
     form = models.ForeignKey(Form, on_delete=models.CASCADE, related_name="variables")
     name = models.CharField(max_length=255)
 
@@ -240,6 +241,7 @@ class Query(ClinicalEntity):
 
 
 class RecordRevision(ClinicalEntity):
+    reason_for_change = models.CharField(max_length=255, blank=True, null=True)
     record = models.ForeignKey(Record, on_delete=models.CASCADE, related_name="revisions")
     value = models.TextField()
 
@@ -254,6 +256,7 @@ def create_record_revision(sender, instance, created, **kwargs):
         external_id=str(uuid.uuid4()),
         record=instance,
         value=instance.value,
+        reason_for_change=getattr(instance, 'reason_for_change', None),
         clinical_timestamp=instance.clinical_timestamp,
         source_sequence=instance.source_sequence,
         offset_days=instance.offset_days,
@@ -320,3 +323,13 @@ class SyncTask(models.Model):
     def __str__(self):
         return f"Task {self.id} for {self.entity_type} - {self.status}"
 
+
+class ElectronicSignature(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    record_revision = models.ForeignKey(RecordRevision, on_delete=models.PROTECT, related_name="signatures")
+    user = models.ForeignKey('users.User', on_delete=models.PROTECT)
+    signature_hash = models.CharField(max_length=255)
+    signed_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"Signature by {self.user} on {self.record_revision.id}"

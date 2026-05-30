@@ -16,12 +16,13 @@ def create_jwt_token(user):
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
 
-def decode_jwt_token(token):
+def decode_jwt_token_full(token):
     # Try our own token first
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         user_model = get_user_model()
-        return user_model.objects.get(id=payload["user_id"])
+        user = user_model.objects.get(id=payload["user_id"])
+        return user, payload
     except jwt.PyJWTError:
         pass
 
@@ -53,8 +54,12 @@ def decode_jwt_token(token):
 
             user_model = get_user_model()
             user, _ = user_model.objects.get_or_create(username=user_id, defaults={"email": email})
-            return user
+            return user, payload
         except Exception as e:
             continue
 
-    return None
+    return None, None
+
+def decode_jwt_token(token):
+    user, _ = decode_jwt_token_full(token)
+    return user

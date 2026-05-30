@@ -23,11 +23,9 @@ def generate_cdisc_export(request):
             dm_writer.writerow([study_id, "DM", f"{study_id}-{subject.external_id}", subject.external_id, rfstdtc])
         zip_file.writestr("DM.csv", dm_buffer.getvalue())
 
-        # VS Domain (Vital Signs)
-        vs_buffer = io.StringIO()
-        vs_writer = csv.writer(vs_buffer)
-        vs_writer.writerow(["STUDYID", "DOMAIN", "USUBJID", "VSSEQ", "VSTESTCD", "VSTEST", "VSORRES"])
+        # Dynamic Domains
         records = Record.objects.select_related('visit__subject__site__study', 'variable').order_by(
+            'variable__cdisc_domain',
             'visit__subject__site__study__external_id',
             'visit__subject__external_id',
             models.F('source_sequence').asc(nulls_last=True),
@@ -35,31 +33,44 @@ def generate_cdisc_export(request):
             'created_at'
         )
 
-        current_usubjid = None
-        current_seq = 1
+        domain_buffers = {}
+        domain_writers = {}
+        current_usubjid_per_domain = {}
+        current_seq_per_domain = {}
 
         for record in records:
+            domain = record.variable.cdisc_domain or "XX"
+            if domain not in domain_buffers:
+                domain_buffers[domain] = io.StringIO()
+                writer = csv.writer(domain_buffers[domain])
+                writer.writerow(["STUDYID", "DOMAIN", "USUBJID", f"{domain}SEQ", f"{domain}TESTCD", f"{domain}TEST", f"{domain}ORRES"])
+                domain_writers[domain] = writer
+                current_usubjid_per_domain[domain] = None
+                current_seq_per_domain[domain] = 1
+            
             study_id = record.visit.subject.site.study.external_id
             usubjid = f"{study_id}-{record.visit.subject.external_id}"
 
-            if usubjid != current_usubjid:
-                current_usubjid = usubjid
-                current_seq = 1
+            if usubjid != current_usubjid_per_domain[domain]:
+                current_usubjid_per_domain[domain] = usubjid
+                current_seq_per_domain[domain] = 1
 
-            seq = record.source_sequence if record.source_sequence is not None else current_seq
+            seq = record.source_sequence if record.source_sequence is not None else current_seq_per_domain[domain]
             if record.source_sequence is None:
-                current_seq += 1
+                current_seq_per_domain[domain] += 1
 
-            vs_writer.writerow([
+            domain_writers[domain].writerow([
                 study_id,
-                "VS",
+                domain,
                 usubjid,
                 seq,
                 record.variable.external_id,
                 record.variable.name,
                 record.value
             ])
-        zip_file.writestr("VS.csv", vs_buffer.getvalue())
+            
+        for domain, buffer in domain_buffers.items():
+            zip_file.writestr(f"{domain}.csv", buffer.getvalue())
 
     zip_buffer.seek(0)
     response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")

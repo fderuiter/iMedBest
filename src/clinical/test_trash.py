@@ -13,9 +13,9 @@ def get_auth_headers():
 @pytest.mark.django_db
 def test_soft_delete_and_restore(client):
     headers = get_auth_headers()
-    client.post("/api/clinical/studies", data={"external_id": "test-study", "name": "Study Trash"}, content_type="application/json", **headers)
-    client.post("/api/clinical/sites", data={"external_id": "site-trash", "study_ext_id": "test-study", "name": "Site Trash"}, content_type="application/json", **headers)
-    client.post("/api/clinical/subjects", data={"external_id": "sub-trash", "site_ext_id": "site-trash", "name": "Subject Trash"}, content_type="application/json", **headers)
+    client.post("/api/clinical/studies", data={"externalId": "test-study", "name": "Study Trash"}, content_type="application/json", **headers)
+    client.post("/api/clinical/sites", data={"externalId": "site-trash", "studyExtId": "test-study", "name": "Site Trash"}, content_type="application/json", **headers)
+    client.post("/api/clinical/subjects", data={"externalId": "sub-trash", "siteExtId": "site-trash", "name": "Subject Trash"}, content_type="application/json", **headers)
     
     from clinical.management.commands.run_sync_worker import Command as WorkerCommand
     from .models import SyncJob

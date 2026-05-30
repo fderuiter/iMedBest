@@ -472,7 +472,7 @@ def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_
     from django.db import transaction
     from clinical.adapter import MultiVendorAdapter
 
-    payload_dict = json.loads(payload_obj.json())
+    payload_dict = json.loads(payload_obj.model_dump_json(by_alias=False))
     provider = getattr(request, "provider", None)
     adapter = MultiVendorAdapter(provider)
 

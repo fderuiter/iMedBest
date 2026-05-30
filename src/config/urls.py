@@ -17,6 +17,23 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path
+
+import ninja.schema
+import ninja.orm
+import ninja.operation
+from pydantic.alias_generators import to_camel
+ninja.schema.Schema.model_config["alias_generator"] = to_camel
+ninja.schema.Schema.model_config["populate_by_name"] = True
+ninja.orm.ModelSchema.model_config["alias_generator"] = to_camel
+ninja.orm.ModelSchema.model_config["populate_by_name"] = True
+
+original_operation_init = ninja.operation.Operation.__init__
+def custom_operation_init(self, *args, **kwargs):
+    if kwargs.get("by_alias") is None:
+        kwargs["by_alias"] = True
+    original_operation_init(self, *args, **kwargs)
+ninja.operation.Operation.__init__ = custom_operation_init
+
 from ninja import NinjaAPI
 
 from audit.api import router as audit_router

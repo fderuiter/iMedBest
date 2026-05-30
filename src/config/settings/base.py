@@ -107,4 +107,8 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'clinical.tasks.poll_edc_queries',
         'schedule': 60.0,
     },
+    'run-reaper-service-every-minute': {
+        'task': 'clinical.tasks.reaper_service',
+        'schedule': 60.0,
+    },
 }

@@ -288,6 +288,9 @@ class SyncJob(models.Model):
     status = models.CharField(max_length=50, default='PENDING', choices=[
         ('PENDING', 'Pending'),
         ('PROCESSING', 'Processing'),
+        ('STALLED', 'Stalled'),
+        ('CANCELLED', 'Cancelled'),
+        ('TIMED_OUT', 'Timed Out'),
         ('COMPLETED', 'Completed'),
         ('FAILED', 'Failed')
     ])
@@ -308,6 +311,9 @@ class SyncTask(models.Model):
     status = models.CharField(max_length=50, default='PENDING', choices=[
         ('PENDING', 'Pending'),
         ('PROCESSING', 'Processing'),
+        ('STALLED', 'Stalled'),
+        ('CANCELLED', 'Cancelled'),
+        ('TIMED_OUT', 'Timed Out'),
         ('COMPLETED', 'Completed'),
         ('FAILED', 'Failed')
     ])
@@ -319,4 +325,16 @@ class SyncTask(models.Model):
 
     def __str__(self):
         return f"Task {self.id} for {self.entity_type} - {self.status}"
+
+class SyncEvent(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    sync_job = models.ForeignKey(SyncJob, on_delete=models.CASCADE, null=True, blank=True)
+    sync_task = models.ForeignKey(SyncTask, on_delete=models.CASCADE, null=True, blank=True)
+    status_from = models.CharField(max_length=50)
+    status_to = models.CharField(max_length=50)
+    message = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Transition {self.status_from} -> {self.status_to}"
 

@@ -142,6 +142,7 @@ class ClinicalEntity(models.Model):
 # Level 1
 class Study(ClinicalEntity):
     name = models.CharField(max_length=255)
+    pii_masking_enabled = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
@@ -320,3 +321,12 @@ class SyncTask(models.Model):
     def __str__(self):
         return f"Task {self.id} for {self.entity_type} - {self.status}"
 
+
+
+class ExportJob(models.Model):
+    user = models.ForeignKey('users.User', on_delete=models.CASCADE)
+    status = models.CharField(max_length=50, default='PENDING') # PENDING, PROCESSING, COMPLETED, FAILED
+    file_path = models.CharField(max_length=500, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(null=True, blank=True)

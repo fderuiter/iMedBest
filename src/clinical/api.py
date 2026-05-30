@@ -37,7 +37,6 @@ class JWTBearer(HttpBearer):
         return None
 
 
-from .export import generate_cdisc_export
 from .models import (
     BufferedOrphan,
     Coding,
@@ -1012,7 +1011,34 @@ def export_cdisc_package(request):
         from django.http import HttpResponseForbidden
 
         return HttpResponseForbidden("Missing data-extraction privileges")
-    return generate_cdisc_export(request)
+    
+    from clinical.models import ExportJob
+    from clinical.tasks import export_cdisc_task
+    
+    job = ExportJob.objects.create(user=request.user)
+    # Trigger background task
+    export_cdisc_task.delay(job.id)
+    
+    return {"message": "Export job started.", "job_id": job.id}
+
+@router.get("/export/cdisc/{job_id}/download")
+def download_cdisc_package(request, job_id: int):
+    from django.http import HttpResponse, HttpResponseForbidden, Http404
+    from clinical.models import ExportJob
+    import os
+    
+    try:
+        job = ExportJob.objects.get(id=job_id)
+    except ExportJob.DoesNotExist:
+        raise Http404("Job not found")
+        
+    if job.status != 'COMPLETED' or not job.file_path or not os.path.exists(job.file_path):
+        return HttpResponse("Job not completed or file missing.", status=400)
+        
+    with open(job.file_path, "rb") as f:
+        response = HttpResponse(f.read(), content_type="application/zip")
+        response["Content-Disposition"] = 'attachment; filename="cdisc_export.zip"'
+        return response
 
 
 class BufferedOrphanSchemaOut(ModelSchema):

@@ -26,18 +26,18 @@ def process_all_jobs():
 def test_reactive_orphan_buffering(client):
     headers = get_auth_headers()
     # Setup some base level 1 and 2
-    client.post("/api/clinical/studies", data={"external_id": "test-study", "name": "S1"}, content_type="application/json", **headers)
-    client.post("/api/clinical/sites", data={"external_id": "si-1", "study_ext_id": "test-study", "name": "Si1"}, content_type="application/json", **headers)
-    client.post("/api/clinical/intervals", data={"external_id": "int-1", "study_ext_id": "test-study", "name": "I1"}, content_type="application/json", **headers)
-    client.post("/api/clinical/forms", data={"external_id": "f-1", "study_ext_id": "test-study", "name": "F1"}, content_type="application/json", **headers)
-    client.post("/api/clinical/variables", data={"external_id": "v-1", "form_ext_id": "f-1", "name": "V1"}, content_type="application/json", **headers)
+    client.post("/api/clinical/studies", data={"externalId": "test-study", "name": "S1"}, content_type="application/json", **headers)
+    client.post("/api/clinical/sites", data={"externalId": "si-1", "studyExtId": "test-study", "name": "Si1"}, content_type="application/json", **headers)
+    client.post("/api/clinical/intervals", data={"externalId": "int-1", "studyExtId": "test-study", "name": "I1"}, content_type="application/json", **headers)
+    client.post("/api/clinical/forms", data={"externalId": "f-1", "studyExtId": "test-study", "name": "F1"}, content_type="application/json", **headers)
+    client.post("/api/clinical/variables", data={"externalId": "v-1", "formExtId": "f-1", "name": "V1"}, content_type="application/json", **headers)
     process_all_jobs()
     
     # Now sync a RECORD before the VISIT and SUBJECT
     # Visit doesn't exist, so this will orphan the record
     rec_resp = client.post(
         "/api/clinical/records",
-        data={"external_id": "rec-orphan", "visit_ext_id": "vis-1", "variable_ext_id": "v-1", "value": "120/80"},
+        data={"externalId": "rec-orphan", "visitExtId": "vis-1", "variableExtId": "v-1", "value": "120/80"},
         content_type="application/json", **headers
     )
     process_all_jobs()
@@ -48,7 +48,7 @@ def test_reactive_orphan_buffering(client):
     # Subject doesn't exist, so this will orphan the visit
     vis_resp = client.post(
         "/api/clinical/visits",
-        data={"external_id": "vis-1", "subject_ext_id": "sub-1", "interval_ext_id": "int-1"},
+        data={"externalId": "vis-1", "subjectExtId": "sub-1", "intervalExtId": "int-1"},
         content_type="application/json", **headers
     )
     process_all_jobs()
@@ -59,7 +59,7 @@ def test_reactive_orphan_buffering(client):
     # This should trigger the visit, which should then trigger the record!
     sub_resp = client.post(
         "/api/clinical/subjects",
-        data={"external_id": "sub-1", "site_ext_id": "si-1", "name": "Sub1"},
+        data={"externalId": "sub-1", "siteExtId": "si-1", "name": "Sub1"},
         content_type="application/json", **headers
     )
     process_all_jobs()

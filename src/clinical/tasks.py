@@ -371,27 +371,33 @@ def export_cdisc_task(job_id):
         
         study = job.study if hasattr(job, 'study') else Study.objects.first() # Default to first study if not linked
         
-        # Make a persistent file path
-        # Assuming there is a MEDIA_ROOT or similar, but for simplicity let's use a temp dir or just /tmp
-        # Since this is a test, /tmp is fine
-        export_dir = "/tmp/exports"
-        os.makedirs(export_dir, exist_ok=True)
-        zip_path = os.path.join(export_dir, f"export_{job_id}.zip")
+        tmp_zip_path = create_odm_xml(study, job)
         
-        create_odm_xml(study, job, zip_path)
+        from clinical.storage import get_storage_adapter
+        from django.db import transaction
         
-        job.file_path = zip_path
-        job.status = 'COMPLETED'
-        job.completed_at = timezone.now()
-        job.save(update_fields=['status', 'file_path', 'completed_at'])
-        
-        # Notification requirement 5 & 6
-        OutboundEvent.objects.create(
-            event_type="ExportJob",
-            action="COMPLETED",
-            payload={"job_id": job.id, "download_url": f"/api/clinical/export/cdisc/{job.id}/download"}
-        )
-        
+        adapter = get_storage_adapter()
+        try:
+            with transaction.atomic():
+                with open(tmp_zip_path, 'rb') as f:
+                    final_path = adapter.save(f"export_{job_id}.zip", f, namespace="exports")
+                
+                job.file_path = final_path
+                job.status = 'COMPLETED'
+                job.completed_at = timezone.now()
+                job.save(update_fields=['status', 'file_path', 'completed_at'])
+                
+                # Notification requirement 5 & 6
+                OutboundEvent.objects.create(
+                    event_type="ExportJob",
+                    action="COMPLETED",
+                    payload={"job_id": job.id, "download_url": f"/api/clinical/export/cdisc/{job.id}/download"}
+                )
+        finally:
+            import os
+            if os.path.exists(tmp_zip_path):
+                os.remove(tmp_zip_path)
+                
     except Exception as e:
         if 'job' in locals():
             job.status = 'FAILED'

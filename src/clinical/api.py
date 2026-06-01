@@ -1070,20 +1070,20 @@ def export_cdisc_package(request, studyKey: str = None):
 def download_cdisc_package(request, job_id: int):
     from django.http import HttpResponse, HttpResponseForbidden, Http404
     from clinical.models import ExportJob
-    import os
+    from clinical.storage import get_storage_adapter
     
     try:
         job = ExportJob.objects.get(id=job_id)
     except ExportJob.DoesNotExist:
         raise Http404("Job not found")
         
-    if job.status != 'COMPLETED' or not job.file_path or not os.path.exists(job.file_path):
+    adapter = get_storage_adapter()
+    if job.status != 'COMPLETED' or not job.file_path or not adapter.exists(job.file_path):
         return HttpResponse("Job not completed or file missing.", status=400)
         
-    with open(job.file_path, "rb") as f:
-        response = HttpResponse(f.read(), content_type="application/zip")
-        response["Content-Disposition"] = 'attachment; filename="cdisc_export.zip"'
-        return response
+    response = HttpResponse(adapter.open(job.file_path, "rb"), content_type="application/zip")
+    response["Content-Disposition"] = 'attachment; filename="cdisc_export.zip"'
+    return response
 
 
 class BufferedOrphanSchemaOut(ModelSchema):

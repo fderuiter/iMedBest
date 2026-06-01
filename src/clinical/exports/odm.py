@@ -16,7 +16,7 @@ def escape_xml(s):
     s = s.replace("'", "&apos;")
     return s
 
-def create_odm_xml(study, job, zip_file_path):
+def create_odm_xml(study, job):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xml", mode="w", encoding="utf-8") as tmp:
         tmp.write('<?xml version="1.0" encoding="UTF-8"?>\n')
         tmp.write(f'<ODM xmlns="http://www.cdisc.org/ns/odm/v1.3" FileType="Snapshot" Granularity="AllClinicalData" Archival="Yes" FileOID="EXPORT_{job.id}" CreationDateTime="{timezone.now().isoformat()}" ODMVersion="1.3.2" Originator="System" SourceSystem="Platform" SourceSystemVersion="1.0">\n')
@@ -152,7 +152,10 @@ def create_odm_xml(study, job, zip_file_path):
         tmp.write('</ODM>\n')
         tmp_name = tmp.name
 
-    with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+    tmp_zip_fd, tmp_zip_path = tempfile.mkstemp(suffix=".zip")
+    os.close(tmp_zip_fd)
+    with zipfile.ZipFile(tmp_zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
         zipf.write(tmp_name, arcname="cdisc_export.xml")
     
     os.remove(tmp_name)
+    return tmp_zip_path

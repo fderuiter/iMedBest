@@ -28,6 +28,8 @@ def get_client_ip(request):
         return x_forwarded_for.split(',')[0]
     return request.META.get('REMOTE_ADDR')
 
+from clinical.storage import get_storage_adapter
+
 def archive_instance_and_descendants(instance):
     collector = Collector(using=instance._state.db)
     collector.collect([instance])
@@ -39,16 +41,10 @@ def archive_instance_and_descendants(instance):
 
     data_str = serializers.serialize("json", objects_to_serialize)
 
-    archive_dir = getattr(settings, 'ARCHIVE_DIR', os.path.join(settings.ROOT_DIR, 'archives'))
-    os.makedirs(archive_dir, exist_ok=True)
-
     filename = f"archive_{instance.__class__.__name__}_{instance.external_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}.json"
-    filepath = os.path.join(archive_dir, filename)
 
-    with open(filepath, 'w') as f:
-        f.write(data_str)
-
-    return filepath
+    adapter = get_storage_adapter()
+    return adapter.save(filename, data_str, namespace="archives")
 
 @receiver(pre_delete)
 def handle_clinical_entity_delete(sender, instance, **kwargs):

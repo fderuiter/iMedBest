@@ -44,28 +44,34 @@ class Command(BaseCommand):
             job.save(update_fields=["status"])
             return True
 
-        min_level = active_tasks.order_by("hierarchy_level").first().hierarchy_level
-
-        pending_tasks = list(active_tasks.filter(hierarchy_level=min_level, status="PENDING"))
-        if not pending_tasks:
+        pending_tasks = active_tasks.filter(status="PENDING")
+        if not pending_tasks.exists():
             return False
 
-        entity_order = {
-            "Study": 1,
-            "Site": 2,
-            "Form": 1,
-            "Interval": 1,
-            "Subject": 2,
-            "Variable": 1,
-            "Visit": 2,
-            "Record": 1,
-            "Coding": 2,
-            "Query": 3,
-            "RecordRevision": 4,
-        }
-        pending_tasks.sort(key=lambda t: entity_order.get(t.entity_type, 99))
-        task = pending_tasks[0]
+        # Find a task whose dependencies are all COMPLETED
+        task_to_run = None
+        for task in pending_tasks:
+            deps = task.dependencies.all()
+            if all(d.status == "COMPLETED" for d in deps):
+                task_to_run = task
+                break
+                
+        if not task_to_run:
+            # Check for failed dependencies
+            failed_found = False
+            for task in pending_tasks:
+                deps = task.dependencies.all()
+                if any(d.status == "FAILED" for d in deps):
+                    task.status = "FAILED"
+                    task.error_message = "Dependency failed"
+                    task.save(update_fields=["status", "error_message"])
+                    failed_found = True
+            
+            if failed_found:
+                return True
+            return False
 
+        task = task_to_run
         updated = SyncTask.objects.filter(id=task.id, status="PENDING").update(status="PROCESSING")
         if not updated:
             return False
@@ -90,13 +96,7 @@ class Command(BaseCommand):
 
     def execute_task(self, task):
         from clinical.adapter import MultiVendorAdapter
-
-        class MockRequest:
-            def __init__(self, user, provider):
-                self.user = user
-                self.user_roles = ["cdisc"]
-                self.provider = provider
-                self.META = {}
+        from clinical.utils import MockRequest
 
         request = MockRequest(task.job.user, task.job.provider)
         payload = task.payload

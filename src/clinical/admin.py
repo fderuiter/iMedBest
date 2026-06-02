@@ -27,8 +27,8 @@ class SyncJobAdmin(admin.ModelAdmin):
 
 @admin.register(SyncTask)
 class SyncTaskAdmin(admin.ModelAdmin):
-    list_display = ("id", "job", "entity_type", "hierarchy_level", "status", "retry_count", "created_at")
-    list_filter = ("status", "entity_type", "hierarchy_level")
+    list_display = ("id", "job", "entity_type", "status", "retry_count", "created_at")
+    list_filter = ("status", "entity_type")
     search_fields = ("id", "job__id", "error_message")
 
 

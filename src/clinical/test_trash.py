@@ -7,10 +7,12 @@ from .models import Site, Study, Subject
 
 
 def get_auth_headers():
+    from clinical.models import Provider
+    provider, _ = Provider.objects.get_or_create(name="Test Provider")
     User = get_user_model()
     user, _ = User.objects.get_or_create(username="test_user", is_staff=True)
     token = create_jwt_token(user)
-    return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": "test-study"}
+    return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": "test-study", "HTTP_X_PROVIDER": str(provider.id)}
 
 
 @pytest.mark.django_db

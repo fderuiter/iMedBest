@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
-def process_sync_task(self, task_id, user_id):
+def process_sync_task(self, task_id):
     task = SyncTask.objects.get(id=task_id)
     try:
         task.status = "PROCESSING"
@@ -32,7 +32,7 @@ def process_sync_task(self, task_id, user_id):
         # Queue child tasks if any are waiting for this parent
         child_tasks = SyncTask.objects.filter(parent_task_id=task.id, status="PENDING")
         for child in child_tasks:
-            process_sync_task.delay(child.id, user_id)
+            process_sync_task.delay(child.id)
 
         # Check if job is completed
         job = task.job
@@ -58,13 +58,13 @@ def process_sync_task(self, task_id, user_id):
 
 
 @shared_task(acks_late=True, reject_on_worker_lost=True)
-def orchestrate_sync_job(job_id, user_id):
+def orchestrate_sync_job(job_id):
     job = SyncJob.objects.get(id=job_id)
     job.status = "PROCESSING"
     job.save(update_fields=["status"])
 
     try:
-        process_next_ready_tasks.delay(job_id, user_id)
+        process_next_ready_tasks.delay(job_id)
     except Exception as e:
         job.status = "FAILED"
         job.error_message = str(e)
@@ -72,7 +72,7 @@ def orchestrate_sync_job(job_id, user_id):
 
 
 @shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
-def process_next_ready_tasks(self, job_id, user_id):
+def process_next_ready_tasks(self, job_id):
     job = SyncJob.objects.get(id=job_id)
     if job.status == "FAILED":
         return
@@ -92,7 +92,7 @@ def process_next_ready_tasks(self, job_id, user_id):
         if all(d.status == "COMPLETED" for d in deps):
             task.status = "PROCESSING"
             task.save(update_fields=["status"])
-            process_single_task.delay(task.id, user_id)
+            process_single_task.delay(task.id)
             started_any = True
 
     if not started_any:
@@ -108,14 +108,14 @@ def process_next_ready_tasks(self, job_id, user_id):
 
         if failed_dependencies:
             # Trigger again to process downstream failures or finish job
-            process_next_ready_tasks.apply_async((job_id, user_id), countdown=1)
+            process_next_ready_tasks.apply_async((job_id,), countdown=1)
         else:
             # Wait for currently PROCESSING tasks to finish
-            check_level_completion.apply_async((job_id, user_id), countdown=2)
+            check_level_completion.apply_async((job_id,), countdown=2)
 
 
 @shared_task(bind=True, max_retries=5, acks_late=True, reject_on_worker_lost=True)
-def process_single_task(self, task_id, user_id):
+def process_single_task(self, task_id):
     task = SyncTask.objects.get(id=task_id)
     if task.status != "PENDING":
         return
@@ -125,13 +125,9 @@ def process_single_task(self, task_id, user_id):
 
     try:
         from clinical.adapter import MultiVendorAdapter
-        from users.models import User
+        from audit.middleware import get_current_request
 
-        user = User.objects.get(id=user_id)
-
-        from clinical.utils import MockRequest
-
-        request = MockRequest(user, task.job.provider)
+        request = get_current_request()
 
         payload = task.payload
         entity_type = task.entity_type
@@ -141,7 +137,7 @@ def process_single_task(self, task_id, user_id):
 
         task.status = "COMPLETED"
         task.save(update_fields=["status"])
-        process_next_ready_tasks.delay(task.job_id, user_id)
+        process_next_ready_tasks.delay(task.job_id)
 
     except Exception as exc:
         task.error_message = str(exc)
@@ -158,18 +154,18 @@ def process_single_task(self, task_id, user_id):
 
 
 @shared_task(acks_late=True, reject_on_worker_lost=True)
-def check_level_completion(job_id, user_id):
+def check_level_completion(job_id):
     job = SyncJob.objects.get(id=job_id)
     if job.status == "FAILED":
         return  # Stop processing
 
     if SyncTask.objects.filter(job=job, status="PROCESSING").exists():
         # Still processing, check again later
-        check_level_completion.apply_async((job_id, user_id), countdown=2)
+        check_level_completion.apply_async((job_id,), countdown=2)
         return
 
     # Call process_next_ready_tasks to advance the job
-    process_next_ready_tasks.delay(job_id, user_id)
+    process_next_ready_tasks.delay(job_id)
 
 
 @shared_task

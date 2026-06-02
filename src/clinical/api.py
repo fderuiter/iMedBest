@@ -23,6 +23,7 @@ class JWTBearer(HttpBearer):
 
         studyKey = request.headers.get("studyKey") or request.GET.get("studyKey")
         siteKey = request.headers.get("siteKey") or request.GET.get("siteKey")
+        provider_id = request.headers.get("X-Provider")
 
         if not studyKey and hasattr(request, "resolver_match") and request.resolver_match:
             studyKey = request.resolver_match.kwargs.get("studyKey")
@@ -30,11 +31,21 @@ class JWTBearer(HttpBearer):
         if not studyKey and not siteKey:
             raise HttpError(400, "Missing required tenant context identifier: studyKey or siteKey")
 
+        if not provider_id:
+            raise HttpError(400, "Missing valid provider context")
+
         user = decode_jwt_token(token)
         if user:
+            from clinical.models import Provider
+            try:
+                provider = Provider.objects.get(id=provider_id)
+            except Provider.DoesNotExist:
+                raise HttpError(400, "Invalid provider context") from None
+
             request.user = user
             request.studyKey = studyKey
             request.siteKey = siteKey
+            request.provider = provider
             # Assign user_roles needed for export to users authenticated via JWT
             # In a full Entra setup, this would map groups/roles from the token
             # For now, give them "extractor" role so CDISC export isn't totally blocked
@@ -71,9 +82,21 @@ class IMednetAPIAuth(APIKeyHeader):
         if key and security_key:
             studyKey = request.headers.get("studyKey") or request.GET.get("studyKey")
             siteKey = request.headers.get("siteKey") or request.GET.get("siteKey")
+            provider_id = request.headers.get("X-Provider")
 
             if not studyKey and hasattr(request, "resolver_match") and request.resolver_match:
                 studyKey = request.resolver_match.kwargs.get("studyKey")
+
+            if not provider_id:
+                from ninja.errors import HttpError
+                raise HttpError(400, "Missing valid provider context")
+
+            from clinical.models import Provider
+            try:
+                provider = Provider.objects.get(id=provider_id)
+            except Provider.DoesNotExist:
+                from ninja.errors import HttpError
+                raise HttpError(400, "Invalid provider context") from None
 
             # We don't mandate studyKey for every single request in auth,
             # but if it's missing and we need it, the endpoint will fail or return empty.
@@ -87,6 +110,7 @@ class IMednetAPIAuth(APIKeyHeader):
             request.user = user
             request.studyKey = studyKey
             request.siteKey = siteKey
+            request.provider = provider
             request.user_roles = ["extractor"]
             request.auth_method = "SpecCompliant"
             return key
@@ -98,6 +122,8 @@ def check_write_allowed(request):
 
     if getattr(request, "auth_method", "") == "SpecCompliant" or "/v1/" in request.path:
         raise HttpError(405, "Method Not Allowed")
+    if not getattr(request, "provider", None):
+        raise HttpError(400, "Missing valid provider context")
 
 
 router = Router(auth=[JWTBearer(), IMednetAPIAuth()], by_alias=True)

@@ -7,10 +7,12 @@ from users.jwt import create_jwt_token
 
 
 def get_auth_headers():
+    from clinical.models import Provider
+    provider, _ = Provider.objects.get_or_create(name="Test Provider")
     User = get_user_model()
     user, _ = User.objects.get_or_create(username="test_user", is_staff=True)
     token = create_jwt_token(user)
-    return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": "test-study"}
+    return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": "test-study", "HTTP_X_PROVIDER": str(provider.id)}
 
 
 def process_all_jobs():
@@ -25,7 +27,7 @@ def process_all_jobs():
             break
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_reactive_orphan_buffering(client):
     headers = get_auth_headers()
     # Setup some base level 1 and 2
@@ -105,7 +107,7 @@ def test_reactive_orphan_buffering(client):
     assert record.value == "120/80"
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_orphans_endpoint(client):
     headers = get_auth_headers()
     # This shouldn't do anything because we don't have orphans right now

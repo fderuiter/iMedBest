@@ -66,7 +66,7 @@ class MultiVendorAdapter:
         }
 
         # Additional scalar fields depending on model
-        for field in ["name", "value", "code", "text"]:
+        for field in ["name", "value", "code", "text", "status"]:
             if field in mapped_payload:
                 defaults[field] = mapped_payload[field]
 
@@ -104,10 +104,29 @@ class MultiVendorAdapter:
                         return 202, {"message": "Buffered due to missing parent"}
                     defaults[parent_field] = parent_obj
 
+        # Reconciliation logic for Query
+        external_id = mapped_payload.get("external_id")
+        if entity_type == "Query":
+            query = ModelCls.objects.filter(provider=self.provider, external_id=external_id).first()
+            incoming_status = mapped_payload.get("status", "OPEN")
+            if query:
+                if query.sync_status == "PENDING":
+                    if incoming_status == query.status:
+                        defaults["sync_status"] = "CONFIRMED"
+                    else:
+                        # Replica is likely stale, don't overwrite optimistic status
+                        defaults.pop("status", None)
+                else:
+                    defaults["status"] = incoming_status
+                    defaults["sync_status"] = "CONFIRMED"
+            else:
+                defaults["status"] = incoming_status
+                defaults["sync_status"] = "CONFIRMED"
+
         # Sync
         obj, _ = ModelCls.objects.update_or_create(
             provider=self.provider,
-            external_id=mapped_payload.get("external_id"),
+            external_id=external_id,
             defaults=defaults,
             create_defaults={**defaults, "created_by": request.user},
         )

@@ -92,13 +92,15 @@ class Command(BaseCommand):
         from clinical.adapter import MultiVendorAdapter
 
         class MockRequest:
-            def __init__(self, user, provider):
+            def __init__(self, user, provider, study_key, site_key):
                 self.user = user
                 self.user_roles = ["cdisc"]
                 self.provider = provider
+                self.studyKey = study_key
+                self.siteKey = site_key
                 self.META = {}
 
-        request = MockRequest(task.job.user, task.job.provider)
+        request = MockRequest(task.job.user, task.job.provider, task.job.study_key, task.job.site_key)
         payload = task.payload
         entity_type = task.entity_type
 

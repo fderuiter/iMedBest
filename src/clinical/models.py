@@ -304,6 +304,8 @@ class SyncJob(models.Model):
         ],
     )
     user = models.ForeignKey("users.User", on_delete=models.CASCADE)
+    study_key = models.CharField(max_length=255, null=True, blank=True)
+    site_key = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     error_message = models.TextField(blank=True, null=True)

@@ -138,67 +138,27 @@ def process_single_task(self, task_id, user_id):
 
     try:
         from users.models import User
-
-        from .api import (
-            CodingSchemaIn,
-            FormSchemaIn,
-            IntervalSchemaIn,
-            QuerySchemaIn,
-            RecordRevisionSchemaIn,
-            RecordSchemaIn,
-            SiteSchemaIn,
-            StudySchemaIn,
-            SubjectSchemaIn,
-            VariableSchemaIn,
-            VisitSchemaIn,
-            sync_coding,
-            sync_form,
-            sync_interval,
-            sync_query,
-            sync_record,
-            sync_revision,
-            sync_site,
-            sync_study,
-            sync_subject,
-            sync_variable,
-            sync_visit,
-        )
+        from clinical.adapter import MultiVendorAdapter
 
         user = User.objects.get(id=user_id)
 
         # Mock request object
         class MockRequest:
-            def __init__(self, user):
+            def __init__(self, user, provider, study_key, site_key):
                 self.user = user
+                self.provider = provider
+                self.studyKey = study_key
+                self.siteKey = site_key
+                self.user_roles = ["cdisc"]
                 self.META = {}
 
-        request = MockRequest(user)
+        request = MockRequest(user, task.job.provider, task.job.study_key, task.job.site_key)
 
         payload = task.payload
         entity_type = task.entity_type
 
-        if entity_type == "Study":
-            sync_study(request, StudySchemaIn(**payload))
-        elif entity_type == "Site":
-            sync_site(request, SiteSchemaIn(**payload))
-        elif entity_type == "Subject":
-            sync_subject(request, SubjectSchemaIn(**payload))
-        elif entity_type == "Form":
-            sync_form(request, FormSchemaIn(**payload))
-        elif entity_type == "Interval":
-            sync_interval(request, IntervalSchemaIn(**payload))
-        elif entity_type == "Variable":
-            sync_variable(request, VariableSchemaIn(**payload))
-        elif entity_type == "Visit":
-            sync_visit(request, VisitSchemaIn(**payload))
-        elif entity_type == "Record":
-            sync_record(request, RecordSchemaIn(**payload))
-        elif entity_type == "Coding":
-            sync_coding(request, CodingSchemaIn(**payload))
-        elif entity_type == "Query":
-            sync_query(request, QuerySchemaIn(**payload))
-        elif entity_type == "RecordRevision":
-            sync_revision(request, RecordRevisionSchemaIn(**payload))
+        adapter = MultiVendorAdapter(task.job.provider)
+        adapter.sync_entity(request, entity_type, payload)
 
         task.status = "COMPLETED"
         task.save(update_fields=["status"])

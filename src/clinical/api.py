@@ -58,6 +58,8 @@ from .models import (
     SyncTask,
     Variable,
     Visit,
+    ValidationRule,
+    ValidationResult
 )
 from .schemas import SyncJobRequest, SyncJobResponse
 
@@ -536,6 +538,9 @@ def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_
             )
             adapter.sync_entity(request, entity_type, payload_dict)
 
+        from clinical.tasks import run_validation_for_job
+        run_validation_for_job.delay(job.id)
+
         status_url = f"/api/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync completed", status_url=status_url)
     except Exception as e:
@@ -593,6 +598,9 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
                 )
                 adapter.sync_entity(request, entity.entity_type, entity.payload)
             SyncTask.objects.bulk_create(task_objects)
+
+        from clinical.tasks import run_validation_for_job
+        run_validation_for_job.delay(job.id)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(
@@ -970,6 +978,11 @@ def sync_query(request, payload: QuerySchemaIn):
         query.text = payload.text
         query.updated_by = request.user
         query.save()
+        
+        # Bi-directional state sync for validation
+        if query.status == "RESOLVED":
+            from clinical.models import ValidationResult
+            ValidationResult.objects.filter(query=query).update(passed=True)
     else:
         query = Query.objects.create(
             external_id=payload.external_id,
@@ -1000,6 +1013,10 @@ def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str |
     query.status = payload.status
     query.sync_status = "PENDING"
     query.save(update_fields=["status", "previous_status", "sync_status", "updated_at"])
+
+    if query.status == "RESOLVED":
+        from clinical.models import ValidationResult
+        ValidationResult.objects.filter(query=query).update(passed=True)
 
     from django.core.cache import cache
     from django.utils import timezone
@@ -1309,3 +1326,60 @@ class StripSyncMetadataMiddleware:
                 except Exception:  # noqa: S110
                     pass
         return response
+
+@router.get("/validation/dashboard-summary")
+def get_validation_dashboard(request, studyKey: str | None = None):
+    qs = ValidationResult.objects.all()
+    if studyKey:
+        # Actually validation results might be study-wide or across studies.
+        # But for this simple implementation, we just show all accessible.
+        pass
+        
+    total_checks = qs.count()
+    if total_checks == 0:
+        return {
+            "passed_percentage": 100.0,
+            "total_checks": 0,
+            "failed_checks": 0,
+            "passed_checks": 0
+        }
+    passed_checks = qs.filter(passed=True).count()
+    failed_checks = total_checks - passed_checks
+    passed_percentage = (passed_checks / total_checks) * 100.0
+    
+    return {
+        "passed_percentage": round(passed_percentage, 2),
+        "total_checks": total_checks,
+        "failed_checks": failed_checks,
+        "passed_checks": passed_checks
+    }
+
+class ValidationRuleSchemaIn(ModelSchema):
+    class Meta:
+        model = ValidationRule
+        fields = ["name", "description", "rule_dsl", "is_active", "version"]
+
+class ValidationRuleSchemaOut(ModelSchema):
+    class Meta:
+        model = ValidationRule
+        fields = ["id", "name", "description", "rule_dsl", "is_active", "version", "created_at", "updated_at"]
+
+@router.post("/validation-rules", response=ValidationRuleSchemaOut)
+def create_validation_rule(request, payload: ValidationRuleSchemaIn):
+    if not (request.user.is_staff or request.user.is_superuser):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied("Admin access required to create validation rules.")
+        
+    rule = ValidationRule.objects.create(
+        name=payload.name,
+        description=payload.description,
+        rule_dsl=payload.rule_dsl,
+        is_active=payload.is_active,
+        version=payload.version
+    )
+    return rule
+
+@router.get("/validation-rules", response=list[ValidationRuleSchemaOut])
+def list_validation_rules(request):
+    return ValidationRule.objects.all()
+

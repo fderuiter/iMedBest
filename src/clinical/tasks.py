@@ -39,6 +39,7 @@ def process_sync_task(self, task_id, user_id):
         if not job.tasks.exclude(status="COMPLETED").exists():
             job.status = "COMPLETED"
             job.save(update_fields=["status"])
+            run_validation_for_job.delay(job.id)
 
     except Exception as exc:
         task.error_message = str(exc)
@@ -109,6 +110,7 @@ def process_level(self, job_id, level, user_id):
         else:
             job.status = "COMPLETED"
             job.save(update_fields=["status"])
+            run_validation_for_job.delay(job.id)
         return
 
     # Process tasks at this level.
@@ -237,6 +239,7 @@ def check_level_completion(job_id, level, user_id):
     else:
         job.status = "COMPLETED"
         job.save(update_fields=["status"])
+        run_validation_for_job.delay(job.id)
 
 
 @shared_task
@@ -412,3 +415,9 @@ def export_cdisc_task(job_id):
             job.status = "FAILED"
             job.error_message = str(e)
             job.save(update_fields=["status", "error_message"])
+
+
+@shared_task
+def run_validation_for_job(job_id):
+    from clinical.validation.engine import execute_validation_for_job
+    execute_validation_for_job(job_id)

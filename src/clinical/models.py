@@ -345,3 +345,28 @@ class ExportJob(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(null=True, blank=True)
+
+
+class ValidationRule(models.Model):
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    rule_dsl = models.JSONField(help_text="JSON DSL for defining validation logic")
+    is_active = models.BooleanField(default=True)
+    version = models.IntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} (v{self.version})"
+
+
+class ValidationResult(models.Model):
+    rule = models.ForeignKey(ValidationRule, on_delete=models.CASCADE, related_name="results")
+    job = models.ForeignKey(SyncJob, on_delete=models.CASCADE, null=True, blank=True, related_name="validation_results")
+    passed = models.BooleanField(default=True)
+    error_message = models.TextField(blank=True, null=True)
+    query = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name="validation_results")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Result for {self.rule.name}: {'Passed' if self.passed else 'Failed'}"

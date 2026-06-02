@@ -50,7 +50,16 @@ def export_audit_log(
         ["Timestamp", "Action", "Model", "Object ID", "Study ID", "Changes", "User ID", "IP Address", "User Agent"]
     )
 
+
     for log in qs:
+        # Check if the audit log relates to a masked study
+                # We can just always mask them in the export, or mask them if we can determine the study is masked.
+        # But determining the study for every single audit log is expensive.
+        # "Audit CSV exports no longer contain plaintext IP addresses or user-specific identifiers"
+        # I'll just mask them in the CSV output.
+        user_id_out = "[REDACTED]" if log.user_id else ""
+        ip_out = "[REDACTED]" if log.ip_address else ""
+
         writer.writerow(
             [
                 log.timestamp.isoformat(),
@@ -59,12 +68,11 @@ def export_audit_log(
                 log.object_id,
                 log.study_id,
                 str(log.changes),
-                log.user_id,
-                log.ip_address,
+                user_id_out,
+                ip_out,
                 log.user_agent,
             ]
         )
-
     response = HttpResponse(buffer.getvalue(), content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="audit_log.csv"'
     return response

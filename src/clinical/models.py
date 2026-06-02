@@ -35,6 +35,7 @@ class ClinicalEntityQuerySet(models.QuerySet):
     def hard_delete(self):
         return super().delete()
 
+
     def restore(self):
         for obj in self:
             obj.restore()
@@ -51,6 +52,7 @@ class AllManager(models.Manager):
 
 
 class ClinicalEntity(models.Model):
+    pii_fields = []
     external_id = models.CharField(max_length=255)
     provider = models.ForeignKey("clinical.Provider", on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -73,9 +75,11 @@ class ClinicalEntity(models.Model):
     objects = ActiveManager()
     all_objects = AllManager()
 
+
     class Meta:
         abstract = True
         constraints: ClassVar[list] = [
+
             models.UniqueConstraint(
                 fields=["provider", "external_id"], name="%(app_label)s_%(class)s_unique_provider_external_id"
             )
@@ -96,6 +100,24 @@ class ClinicalEntity(models.Model):
                         filter_kwargs = {related_object.field.name: self}
                         for child in related_model.all_objects.filter(**filter_kwargs, is_deleted=False):
                             child.delete(deleted_at=self.deleted_at)
+
+
+    def get_study(self):
+        if self.__class__.__name__ == "Study":
+            return self
+        if self.__class__.__name__ == "Site":
+            return self.study
+        if self.__class__.__name__ == "Subject":
+            return self.site.study
+        if self.__class__.__name__ in ["Form", "Interval"]:
+            return self.study
+        if self.__class__.__name__ == "Variable":
+            return self.form.study
+        if hasattr(self, "get_subject"):
+            subj = self.get_subject()
+            if subj:
+                return subj.site.study
+        return None
 
     def restore(self):
         if self.is_deleted:
@@ -145,11 +167,18 @@ class ClinicalEntity(models.Model):
 
 
 # Level 1
+
 class Study(ClinicalEntity):
     name = models.CharField(max_length=255)
     pii_masking_enabled = models.BooleanField(default=False)
 
+    class Meta:
+        permissions = [
+            ("view_pii", "Can view unmasked PII"),
+        ]
+
     def __str__(self):
+
         return self.name
 
 
@@ -165,6 +194,7 @@ class Site(ClinicalEntity):
 class Subject(ClinicalEntity):
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="subjects")
     name = models.CharField(max_length=255, blank=True)
+    pii_fields = ["name"]
 
     @property
     def baseline_date(self):
@@ -220,6 +250,7 @@ class Record(ClinicalEntity):
     visit = models.ForeignKey(Visit, on_delete=models.CASCADE, related_name="records")
     variable = models.ForeignKey(Variable, on_delete=models.CASCADE, related_name="records")
     value = models.TextField(blank=True)
+    pii_fields = ["value"]
 
     def get_subject(self):
         return self.visit.subject
@@ -248,24 +279,32 @@ class Query(ClinicalEntity):
 class RecordRevision(ClinicalEntity):
     record = models.ForeignKey(Record, on_delete=models.CASCADE, related_name="revisions")
     value = models.TextField()
+    pii_fields = ["value"]
 
     def get_subject(self):
         return self.record.visit.subject
 
 
+
 @receiver(post_save, sender=Record)
 def create_record_revision(sender, instance, created, **kwargs):
+    value_to_save = instance.value
+    study = instance.get_study()
+    if study and getattr(study, "pii_masking_enabled", False) and hasattr(instance, "pii_fields") and "value" in instance.pii_fields and value_to_save:
+        value_to_save = "[REDACTED]"
+
     RecordRevision.objects.create(
         external_id=str(uuid.uuid4()),
         provider=instance.provider,
         record=instance,
-        value=instance.value,
+        value=value_to_save,
         clinical_timestamp=instance.clinical_timestamp,
         source_sequence=instance.source_sequence,
         offset_days=instance.offset_days,
         created_by=instance.updated_by,
         updated_by=instance.updated_by,
     )
+
 
 
 @receiver(post_save, sender=Visit)

@@ -6,6 +6,7 @@ from django.forms.models import model_to_dict
 
 from .middleware import get_current_request
 from .tasks import create_audit_log_task
+from .utils import extract_study_id
 
 EXCLUDED_MODELS = ["AuditLog", "Session", "LogEntry", "ContentType", "Permission", "Group", "Revision", "Migration"]
 
@@ -30,6 +31,8 @@ def create_audit_log(action, instance, changes=None):
     ip_address = get_client_ip(request) if request else None
     user_agent = request.META.get("HTTP_USER_AGENT") if request else None
 
+    study_id = extract_study_id(instance)
+
     create_audit_log_task.delay(
         action=action,
         model_name=model_name,
@@ -38,6 +41,7 @@ def create_audit_log(action, instance, changes=None):
         user_id=user.pk if user else None,
         ip_address=ip_address,
         user_agent=user_agent,
+        study_id=study_id,
     )
 
 

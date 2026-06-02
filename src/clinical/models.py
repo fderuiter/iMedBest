@@ -103,21 +103,16 @@ class ClinicalEntity(models.Model):
 
 
     def get_study(self):
-        if self.__class__.__name__ == "Study":
+        if isinstance(self, Study):
             return self
-        if self.__class__.__name__ == "Site":
+        if isinstance(self, (Site, Form, Interval)):
             return self.study
-        if self.__class__.__name__ == "Subject":
+        if isinstance(self, Subject):
             return self.site.study
-        if self.__class__.__name__ in ["Form", "Interval"]:
-            return self.study
-        if self.__class__.__name__ == "Variable":
+        if isinstance(self, Variable):
             return self.form.study
-        if hasattr(self, "get_subject"):
-            subj = self.get_subject()
-            if subj:
-                return subj.site.study
-        return None
+        subj = self.get_subject() if hasattr(self, "get_subject") else None
+        return subj.site.study if subj else None
 
     def restore(self):
         if self.is_deleted:
@@ -290,13 +285,14 @@ class RecordRevision(ClinicalEntity):
 def create_record_revision(sender, instance, created, **kwargs):
     value_to_save = instance.value
     study = instance.get_study()
-    if (
-        study
+    should_mask = (
+        study is not None
         and getattr(study, "pii_masking_enabled", False)
         and hasattr(instance, "pii_fields")
         and "value" in instance.pii_fields
         and value_to_save
-    ):
+    )
+    if should_mask:
         value_to_save = "[REDACTED]"
 
     RecordRevision.objects.create(
@@ -420,4 +416,5 @@ class ValidationResult(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Result for {self.rule.name}: {'Passed' if self.passed else 'Failed'}"
+        status = "Passed" if self.passed else "Failed"
+        return f"Result for {self.rule.name}: {status}"

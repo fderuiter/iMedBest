@@ -50,15 +50,13 @@ def export_audit_log(
         ["Timestamp", "Action", "Model", "Object ID", "Study ID", "Changes", "User ID", "IP Address", "User Agent"]
     )
 
-
     for log in qs:
-        # Check if the audit log relates to a masked study
-                # We can just always mask them in the export, or mask them if we can determine the study is masked.
-        # But determining the study for every single audit log is expensive.
-        # "Audit CSV exports no longer contain plaintext IP addresses or user-specific identifiers"
-        # I'll just mask them in the CSV output.
-        user_id_out = "[REDACTED]" if log.user_id else ""
-        ip_out = "[REDACTED]" if log.ip_address else ""
+        study_obj = log.study
+        pii_masked = study_obj is not None and getattr(study_obj, "pii_masking_enabled", False)
+        can_view_pii = request.user.is_staff or request.user.is_superuser or request.user.has_perm("users.view_pii")
+        redact = pii_masked and not can_view_pii
+        user_id_out = "[REDACTED]" if redact and log.user_id else (log.user_id or "")
+        ip_out = "[REDACTED]" if redact and log.ip_address else (log.ip_address or "")
 
         writer.writerow(
             [
@@ -66,7 +64,7 @@ def export_audit_log(
                 log.action,
                 log.model_name,
                 log.object_id,
-                log.study_id,
+                log.study_id or "",
                 str(log.changes),
                 user_id_out,
                 ip_out,

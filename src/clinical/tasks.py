@@ -129,6 +129,16 @@ def process_single_task(self, task_id):
         from clinical.adapter import MultiVendorAdapter
 
         request = get_current_request()
+        if request is None:
+            from django.contrib.auth.models import AnonymousUser
+
+            class _SystemRequest:
+                user = AnonymousUser()
+                user_roles: list = []
+                provider = task.job.provider
+                META: dict = {}
+
+            request = _SystemRequest()
 
         payload = task.payload
         entity_type = task.entity_type

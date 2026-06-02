@@ -677,9 +677,6 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
         from clinical.tasks import orchestrate_sync_job
         orchestrate_sync_job.delay(job.id)
 
-        from clinical.tasks import run_validation_for_job
-        run_validation_for_job.delay(job.id)
-
         status_url = f"/api/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(
             job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url
@@ -1489,8 +1486,8 @@ def create_validation_rule(request, payload: ValidationRuleSchemaIn):
     check_write_allowed(request)
 
     if not (request.user.is_staff or request.user.is_superuser):
-        from django.core.exceptions import PermissionDenied
-        raise PermissionDenied("Admin access required to create validation rules.")
+        from ninja.errors import HttpError
+        raise HttpError(403, "Admin access required to create validation rules.")
 
     rule = ValidationRule.objects.create(
         name=payload.name,

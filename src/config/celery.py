@@ -1,4 +1,6 @@
 import os
+import threading
+from collections import OrderedDict
 
 from celery import Celery
 from celery.signals import before_task_publish, task_postrun, task_prerun
@@ -19,15 +21,16 @@ def inject_context_into_task(headers=None, **kwargs):
     request = get_current_request()
 
     if request:
-        headers["__user_id"] = getattr(request.user, "pk", None) if hasattr(request, "user") and request.user else None
+        user_pk = getattr(request.user, "pk", None) if hasattr(request, "user") and request.user else None
+        headers["audit_user_id"] = user_pk
 
         ip = ""
         if hasattr(request, "META"):
             x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
             ip = x_forwarded_for.split(",")[0] if x_forwarded_for else request.META.get("REMOTE_ADDR", "")
 
-        headers["__ip_address"] = ip
-        headers["__user_agent"] = request.META.get("HTTP_USER_AGENT", "") if hasattr(request, "META") else ""
+        headers["audit_ip_address"] = ip
+        headers["audit_user_agent"] = request.META.get("HTTP_USER_AGENT", "") if hasattr(request, "META") else ""
 
 
 class MockRequest:
@@ -49,7 +52,21 @@ class MockRequest:
             self.user = AnonymousUser()
 
 
-_celery_task_tokens = {}
+_TASK_TOKEN_MAX = 2048
+_celery_task_tokens: OrderedDict = OrderedDict()
+_celery_task_tokens_lock = threading.Lock()
+
+
+def _put_token(task_id, token):
+    with _celery_task_tokens_lock:
+        _celery_task_tokens[task_id] = token
+        while len(_celery_task_tokens) > _TASK_TOKEN_MAX:
+            _celery_task_tokens.popitem(last=False)
+
+
+def _pop_token(task_id):
+    with _celery_task_tokens_lock:
+        return _celery_task_tokens.pop(task_id, None)
 
 
 @task_prerun.connect
@@ -57,24 +74,18 @@ def setup_task_context(task_id, task, *args, **kwargs):
     from audit.middleware import _request_ctx_var
     request_headers = getattr(task.request, "headers", {}) or {}
 
-    # fallback to task.request if headers are flat?
-    if "__user_id" not in request_headers and hasattr(task.request, "__user_id"):
-        user_id = getattr(task.request, "__user_id", None)
-        ip_address = getattr(task.request, "__ip_address", "")
-        user_agent = getattr(task.request, "__user_agent", "")
-    else:
-        user_id = request_headers.get("__user_id")
-        ip_address = request_headers.get("__ip_address", "")
-        user_agent = request_headers.get("__user_agent", "")
+    user_id = request_headers.get("audit_user_id")
+    ip_address = request_headers.get("audit_ip_address", "")
+    user_agent = request_headers.get("audit_user_agent", "")
 
     mock_request = MockRequest(user_id, ip_address, user_agent)
     token = _request_ctx_var.set(mock_request)
-    _celery_task_tokens[task_id] = token
+    _put_token(task_id, token)
 
 
 @task_postrun.connect
 def teardown_task_context(task_id, task, *args, **kwargs):
     from audit.middleware import _request_ctx_var
-    token = _celery_task_tokens.pop(task_id, None)
+    token = _pop_token(task_id)
     if token:
         _request_ctx_var.reset(token)

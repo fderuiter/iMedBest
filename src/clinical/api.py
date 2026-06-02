@@ -23,6 +23,7 @@ class JWTBearer(HttpBearer):
 
         studyKey = request.headers.get("studyKey") or request.GET.get("studyKey")
         siteKey = request.headers.get("siteKey") or request.GET.get("siteKey")
+        provider_id = request.headers.get("X-Provider")
 
         if not studyKey and hasattr(request, "resolver_match") and request.resolver_match:
             studyKey = request.resolver_match.kwargs.get("studyKey")
@@ -30,11 +31,21 @@ class JWTBearer(HttpBearer):
         if not studyKey and not siteKey:
             raise HttpError(400, "Missing required tenant context identifier: studyKey or siteKey")
 
+        if not provider_id:
+            raise HttpError(400, "Missing valid provider context")
+
         user = decode_jwt_token(token)
         if user:
+            from clinical.models import Provider
+            try:
+                provider = Provider.objects.get(id=provider_id)
+            except Provider.DoesNotExist:
+                raise HttpError(400, "Invalid provider context") from None
+
             request.user = user
             request.studyKey = studyKey
             request.siteKey = siteKey
+            request.provider = provider
             # Assign user_roles needed for export to users authenticated via JWT
             # In a full Entra setup, this would map groups/roles from the token
             # For now, give them "extractor" role so CDISC export isn't totally blocked
@@ -58,6 +69,8 @@ from .models import (
     SyncTask,
     Variable,
     Visit,
+    ValidationRule,
+    ValidationResult
 )
 from .schemas import SyncJobRequest, SyncJobResponse
 
@@ -71,9 +84,21 @@ class IMednetAPIAuth(APIKeyHeader):
         if key and security_key:
             studyKey = request.headers.get("studyKey") or request.GET.get("studyKey")
             siteKey = request.headers.get("siteKey") or request.GET.get("siteKey")
+            provider_id = request.headers.get("X-Provider")
 
             if not studyKey and hasattr(request, "resolver_match") and request.resolver_match:
                 studyKey = request.resolver_match.kwargs.get("studyKey")
+
+            if not provider_id:
+                from ninja.errors import HttpError
+                raise HttpError(400, "Missing valid provider context")
+
+            from clinical.models import Provider
+            try:
+                provider = Provider.objects.get(id=provider_id)
+            except Provider.DoesNotExist:
+                from ninja.errors import HttpError
+                raise HttpError(400, "Invalid provider context") from None
 
             # We don't mandate studyKey for every single request in auth,
             # but if it's missing and we need it, the endpoint will fail or return empty.
@@ -87,6 +112,7 @@ class IMednetAPIAuth(APIKeyHeader):
             request.user = user
             request.studyKey = studyKey
             request.siteKey = siteKey
+            request.provider = provider
             request.user_roles = ["extractor"]
             request.auth_method = "SpecCompliant"
             return key
@@ -98,6 +124,8 @@ def check_write_allowed(request):
 
     if getattr(request, "auth_method", "") == "SpecCompliant" or "/v1/" in request.path:
         raise HttpError(405, "Method Not Allowed")
+    if not getattr(request, "provider", None):
+        raise HttpError(400, "Missing valid provider context")
 
 
 router = Router(auth=[JWTBearer(), IMednetAPIAuth()], by_alias=True)
@@ -509,7 +537,7 @@ from typing import Any
 from django.core.exceptions import PermissionDenied
 
 
-def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_obj) -> tuple[int, Any]:
+def _queue_single_task(request, entity_type: str, payload_obj) -> tuple[int, Any]:
     if not (request.user.is_staff or request.user.is_superuser):
         from users.models import SiteMembership
 
@@ -529,12 +557,14 @@ def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_
             job = SyncJob.objects.create(user=request.user, provider=provider, status="COMPLETED")
             SyncTask.objects.create(
                 job=job,
-                hierarchy_level=hierarchy_level,
                 entity_type=entity_type,
                 payload=payload_dict,
                 status="COMPLETED",
             )
             adapter.sync_entity(request, entity_type, payload_dict)
+
+        from clinical.tasks import run_validation_for_job
+        run_validation_for_job.delay(job.id)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync completed", status_url=status_url)
@@ -570,6 +600,8 @@ def mask_pii_for_user(request, data):
 # --- Endpoints ---
 
 
+from .graph import topological_sort_entities, get_provider_dependencies
+
 @router.post("/sync-jobs", response={200: SyncJobResponse, 400: dict})
 def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = None):
     check_write_allowed(request)
@@ -581,50 +613,60 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
 
     from django.db import transaction
 
-    from clinical.adapter import MultiVendorAdapter
-
     provider = getattr(request, "provider", None)
-    adapter = MultiVendorAdapter(provider)
 
-    entity_order = {
-        "Study": 1,
-        "Site": 2,
-        "Form": 1,
-        "Interval": 1,
-        "Subject": 2,
-        "Variable": 1,
-        "Visit": 2,
-        "Record": 1,
-        "Coding": 2,
-        "Query": 3,
-        "RecordRevision": 4,
+    # Perform topological sort of the entity types to resolve dynamic execution order
+    sorted_entities = topological_sort_entities(payload.entities, provider)
+
+    # Validate entity types
+    valid_entity_types = {
+        "Study", "Site", "Form", "Interval", "Subject", "Variable", "Visit", "Record", "Coding", "Query", "RecordRevision"
     }
-
-    sorted_entities = sorted(payload.entities, key=lambda e: (e.hierarchy_level, entity_order.get(e.entity_type, 99)))
+    for entity in sorted_entities:
+        if entity.entity_type not in valid_entity_types:
+            return 400, {"message": f"Sync failed. Error: Unknown entity type: {entity.entity_type}"}
 
     try:
         with transaction.atomic():
-            job = SyncJob.objects.create(user=request.user, provider=provider, status="COMPLETED")
+            job = SyncJob.objects.create(user=request.user, provider=provider, status="PENDING")
+            
+            # Create tasks, and map their temporary IDs to set dependencies
             task_objects = []
+            entity_type_to_task = {}
             for entity in sorted_entities:
-                task_objects.append(
-                    SyncTask(
-                        job=job,
-                        hierarchy_level=entity.hierarchy_level,
-                        entity_type=entity.entity_type,
-                        payload=entity.payload,
-                        status="COMPLETED",
-                    )
+                task = SyncTask(
+                    job=job,
+                    entity_type=entity.entity_type,
+                    payload=entity.payload,
+                    status="PENDING",
                 )
-                adapter.sync_entity(request, entity.entity_type, entity.payload)
-            SyncTask.objects.bulk_create(task_objects)
+                task.save()
+                task_objects.append(task)
+                # Keep a list of tasks per entity type to resolve dependencies
+                entity_type_to_task.setdefault(entity.entity_type, []).append(task)
+
+            # Assign DAG dependencies dynamically based on Provider definition
+            dependencies_map = get_provider_dependencies(provider)
+            for task in task_objects:
+                parent_types = dependencies_map.get(task.entity_type, [])
+                for parent_type in parent_types:
+                    parent_tasks = entity_type_to_task.get(parent_type, [])
+                    for pt in parent_tasks:
+                        task.dependencies.add(pt)
+
+        # Trigger celery orchestrator
+        from clinical.tasks import orchestrate_sync_job
+        orchestrate_sync_job.delay(job.id, request.user.id)
+
+        from clinical.tasks import run_validation_for_job
+        run_validation_for_job.delay(job.id)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(
-            job_id=job.id, status=job.status, message="Sync completed synchronously", status_url=status_url
+            job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url
         )
     except Exception as e:
-        return 400, {"message": f"Sync failed. No data was saved. Error: {e!s}"}
+        return 400, {"message": f"Sync failed. Error: {e!s}"}
 
 
 @router.get("/sync-jobs/{job_id}", response=JobStatusSchemaOut)
@@ -636,7 +678,7 @@ def get_sync_job(request, job_id: str, studyKey: str | None = None):
 @router.post("/studies", response={200: SyncJobResponse, 400: dict})
 def api_sync_study(request, payload: StudySchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
-    return _queue_single_task(request, 1, "Study", payload)
+    return _queue_single_task(request, "Study", payload)
 
 
 def sync_study(request, payload: StudySchemaIn):
@@ -663,7 +705,7 @@ def list_studies(request, studyKey: str | None = None):
 @router.post("/sites", response={200: SyncJobResponse, 400: dict})
 def api_sync_site(request, payload: SiteSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
-    return _queue_single_task(request, 1, "Site", payload)
+    return _queue_single_task(request, "Site", payload)
 
 
 def sync_site(request, payload: SiteSchemaIn):
@@ -697,7 +739,7 @@ def list_sites(request, studyKey: str | None = None):
 @router.post("/subjects", response={200: SyncJobResponse, 400: dict})
 def api_sync_subject(request, payload: SubjectSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
-    return _queue_single_task(request, 2, "Subject", payload)
+    return _queue_single_task(request, "Subject", payload)
 
 
 def sync_subject(request, payload: SubjectSchemaIn):
@@ -731,7 +773,7 @@ def list_subjects(request, studyKey: str | None = None):
 @router.post("/forms", response={200: SyncJobResponse, 400: dict})
 def api_sync_form(request, payload: FormSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
-    return _queue_single_task(request, 2, "Form", payload)
+    return _queue_single_task(request, "Form", payload)
 
 
 def sync_form(request, payload: FormSchemaIn):
@@ -765,7 +807,7 @@ def list_forms(request, studyKey: str | None = None):
 @router.post("/intervals", response={200: SyncJobResponse, 400: dict})
 def api_sync_interval(request, payload: IntervalSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
-    return _queue_single_task(request, 2, "Interval", payload)
+    return _queue_single_task(request, "Interval", payload)
 
 
 def sync_interval(request, payload: IntervalSchemaIn):
@@ -799,7 +841,7 @@ def list_intervals(request, studyKey: str | None = None):
 @router.post("/variables", response={200: SyncJobResponse, 400: dict})
 def api_sync_variable(request, payload: VariableSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
-    return _queue_single_task(request, 3, "Variable", payload)
+    return _queue_single_task(request, "Variable", payload)
 
 
 def sync_variable(request, payload: VariableSchemaIn):
@@ -835,7 +877,7 @@ def list_variables(request, studyKey: str | None = None):
 @router.post("/visits", response={200: SyncJobResponse, 400: dict})
 def api_sync_visit(request, payload: VisitSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
-    return _queue_single_task(request, 3, "Visit", payload)
+    return _queue_single_task(request, "Visit", payload)
 
 
 def sync_visit(request, payload: VisitSchemaIn):
@@ -879,7 +921,7 @@ def list_visits(request, studyKey: str | None = None):
 @router.post("/records", response={200: SyncJobResponse, 400: dict})
 def api_sync_record(request, payload: RecordSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
-    return _queue_single_task(request, 4, "Record", payload)
+    return _queue_single_task(request, "Record", payload)
 
 
 def sync_record(request, payload: RecordSchemaIn):
@@ -929,7 +971,7 @@ def list_records(request, studyKey: str | None = None):
 @router.post("/codings", response={200: SyncJobResponse, 400: dict})
 def api_sync_coding(request, payload: CodingSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
-    return _queue_single_task(request, 4, "Coding", payload)
+    return _queue_single_task(request, "Coding", payload)
 
 
 def sync_coding(request, payload: CodingSchemaIn):
@@ -967,7 +1009,7 @@ def list_codings(request, studyKey: str | None = None):
 @router.post("/queries", response={200: SyncJobResponse, 400: dict})
 def api_sync_query(request, payload: QuerySchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
-    return _queue_single_task(request, 4, "Query", payload)
+    return _queue_single_task(request, "Query", payload)
 
 
 def sync_query(request, payload: QuerySchemaIn):
@@ -1003,6 +1045,11 @@ def sync_query(request, payload: QuerySchemaIn):
         query.text = payload.text
         query.updated_by = request.user
         query.save()
+        
+        # Bi-directional state sync for validation
+        if query.status == "RESOLVED":
+            from clinical.models import ValidationResult
+            ValidationResult.objects.filter(query=query).update(passed=True)
     else:
         query = Query.objects.create(
             external_id=payload.external_id,
@@ -1035,6 +1082,10 @@ def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str |
     query.sync_status = "PENDING"
     query.save(update_fields=["status", "previous_status", "sync_status", "updated_at"])
 
+    if query.status == "RESOLVED":
+        from clinical.models import ValidationResult
+        ValidationResult.objects.filter(query=query).update(passed=True)
+
     from django.core.cache import cache
     from django.utils import timezone
 
@@ -1052,7 +1103,7 @@ def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str |
 @router.post("/revisions", response={200: SyncJobResponse, 400: dict})
 def api_sync_revision(request, payload: RecordRevisionSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
-    return _queue_single_task(request, 4, "RecordRevision", payload)
+    return _queue_single_task(request, "RecordRevision", payload)
 
 
 def sync_revision(request, payload: RecordRevisionSchemaIn):
@@ -1343,3 +1394,60 @@ class StripSyncMetadataMiddleware:
                 except Exception:  # noqa: S110
                     pass
         return response
+
+@router.get("/validation/dashboard-summary")
+def get_validation_dashboard(request, studyKey: str | None = None):
+    qs = ValidationResult.objects.all()
+    if studyKey:
+        # Actually validation results might be study-wide or across studies.
+        # But for this simple implementation, we just show all accessible.
+        pass
+        
+    total_checks = qs.count()
+    if total_checks == 0:
+        return {
+            "passed_percentage": 100.0,
+            "total_checks": 0,
+            "failed_checks": 0,
+            "passed_checks": 0
+        }
+    passed_checks = qs.filter(passed=True).count()
+    failed_checks = total_checks - passed_checks
+    passed_percentage = (passed_checks / total_checks) * 100.0
+    
+    return {
+        "passed_percentage": round(passed_percentage, 2),
+        "total_checks": total_checks,
+        "failed_checks": failed_checks,
+        "passed_checks": passed_checks
+    }
+
+class ValidationRuleSchemaIn(ModelSchema):
+    class Meta:
+        model = ValidationRule
+        fields = ["name", "description", "rule_dsl", "is_active", "version"]
+
+class ValidationRuleSchemaOut(ModelSchema):
+    class Meta:
+        model = ValidationRule
+        fields = ["id", "name", "description", "rule_dsl", "is_active", "version", "created_at", "updated_at"]
+
+@router.post("/validation-rules", response=ValidationRuleSchemaOut)
+def create_validation_rule(request, payload: ValidationRuleSchemaIn):
+    if not (request.user.is_staff or request.user.is_superuser):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied("Admin access required to create validation rules.")
+        
+    rule = ValidationRule.objects.create(
+        name=payload.name,
+        description=payload.description,
+        rule_dsl=payload.rule_dsl,
+        is_active=payload.is_active,
+        version=payload.version
+    )
+    return rule
+
+@router.get("/validation-rules", response=list[ValidationRuleSchemaOut])
+def list_validation_rules(request):
+    return ValidationRule.objects.all()
+

@@ -554,20 +554,28 @@ def _queue_single_task(request, entity_type: str, payload_obj) -> tuple[int, Any
 
     try:
         with transaction.atomic():
-            job = SyncJob.objects.create(user=request.user, provider=provider, status="COMPLETED")
-            SyncTask.objects.create(
+            job = SyncJob.objects.create(user=request.user, provider=provider, status="PROCESSING")
+            task = SyncTask.objects.create(
                 job=job,
                 entity_type=entity_type,
                 payload=payload_dict,
-                status="COMPLETED",
+                status="PROCESSING",
             )
-            adapter.sync_entity(request, entity_type, payload_dict)
+            result = adapter.sync_entity(request, entity_type, payload_dict)
+            if isinstance(result, tuple) and len(result) == 2 and result[0] == 202:
+                task.status = "BUFFERED"
+                job.status = "PROCESSING" # Job stays processing until orphan resolved
+            else:
+                task.status = "COMPLETED"
+                job.status = "COMPLETED"
+            task.save(update_fields=["status"])
+            job.save(update_fields=["status"])
 
         from clinical.tasks import run_validation_for_job
         run_validation_for_job.delay(job.id)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
-        return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync completed", status_url=status_url)
+        return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
     except Exception as e:
         return 400, {"message": f"Sync failed. No data was saved. Error: {e!s}"}
 
@@ -1227,7 +1235,27 @@ def _reprocess_orphan(orphan):
     req = type("DummyRequest", (object,), {"user": orphan.user, "provider": orphan.provider, "user_roles": ["cdisc"]})()
 
     adapter = MultiVendorAdapter(orphan.provider)
-    adapter.sync_entity(req, orphan.entity_type, orphan.payload)
+    result = adapter.sync_entity(req, orphan.entity_type, orphan.payload)
+
+    if not (isinstance(result, tuple) and len(result) == 2 and result[0] == 202):
+        from .models import SyncTask
+        from audit.models import AuditLog
+        tasks = SyncTask.objects.filter(status="BUFFERED", entity_type=orphan.entity_type)
+        for task in tasks:
+            if task.payload == orphan.payload:
+                task.status = "COMPLETED"
+                task.save(update_fields=["status"])
+                AuditLog.objects.create(
+                    action="UPDATE",
+                    model_name="SyncTask",
+                    object_id=str(task.id),
+                    user=orphan.user,
+                    changes={
+                        "status": ["BUFFERED", "COMPLETED"],
+                        "resolving_parent_record": orphan.missing_parent_id,
+                    }
+                )
+                logger.info("Transitioned buffered task %s to COMPLETED via parent %s", task.id, orphan.missing_parent_id)
 
     orphan.delete()
 

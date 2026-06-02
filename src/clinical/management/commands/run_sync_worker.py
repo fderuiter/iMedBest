@@ -77,8 +77,11 @@ class Command(BaseCommand):
         task.refresh_from_db()
 
         try:
-            self.execute_task(task)
-            task.status = "COMPLETED"
+            result = self.execute_task(task)
+            if isinstance(result, tuple) and len(result) == 2 and result[0] == 202:
+                task.status = "BUFFERED"
+            else:
+                task.status = "COMPLETED"
             task.save(update_fields=["status"])
         except Exception as e:
             logger.exception(f"Error processing task {task.id}: {e}")
@@ -101,4 +104,5 @@ class Command(BaseCommand):
         entity_type = task.entity_type
 
         adapter = MultiVendorAdapter(task.job.provider)
-        adapter.sync_entity(request, entity_type, payload)
+        return adapter.sync_entity(request, entity_type, payload)
+

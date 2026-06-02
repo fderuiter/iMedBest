@@ -102,3 +102,24 @@ Level 2: Subjects -> Forms -> Intervals -> Users (Core Clinical Structures)
 Level 3: Variables -> Visits (Operational Properties)
 Level 4: Records -> (Codings, Queries, RecordRevisions) -> Jobs (Data Capture Layer)
 ```
+
+---
+
+## 📡 5. Clinical Agent Data Signaling (Sync Integrity Framework)
+
+When developing a new clinical data integration agent (e.g., integrating a new EDC provider or API), the agent must handle asynchronous/partial synchronization natively to maintain 100% data integrity.
+
+### Strict Signaling Protocols
+If an agent successfully processes a record but discovers that a **parent record** required for database persistence has not yet been synced (e.g., receiving a Subject when the Site hasn't been synced):
+* **Do NOT** throw an unhandled exception or fail the job outright.
+* **Do NOT** return a silent success (e.g., 200 OK or generic object).
+* **MUST** explicitly return a `202` HTTP status tuple signaling that the data has been securely stored in the temporary buffer and is awaiting its parent dependencies:
+
+```python
+# Mandatory Buffered Return Pattern for Agents
+return 202, {"message": "Buffered due to missing parent"}
+```
+
+Returning this signal safely transitions the orchestrator task to the `BUFFERED` state, securely holding the data and automatically preventing downstream child orchestration (e.g., visits or labs) until the required parent data arrives.
+
+The Sync Integrity Framework handles auto-resolution, task resumption, and compliance audit logging automatically.

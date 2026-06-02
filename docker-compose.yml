@@ -138,9 +138,22 @@ services:
     networks:
       - imedbest_network
 
+  status_agent:
+    image: python:3.12-slim-bookworm
+    container_name: imedbest_status_agent
+    ports:
+      - "8080:8080"
+    volumes:
+      - status_data:/data
+      - ./status_agent.py:/app/status_agent.py
+    command: python /app/status_agent.py
+    networks:
+      - imedbest_network
+
 volumes:
   postgres_data:
   static_volume:
+  status_data:
 
 networks:
   imedbest_network:

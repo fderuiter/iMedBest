@@ -27,6 +27,10 @@ from audit.api import router as audit_router
 from clinical.api import router as clinical_router
 from clinical.views import DashboardView, RetriggerTimelineTaskView
 from users.api import router as users_router
+from django.http import HttpResponse
+
+def health_check(request):
+    return HttpResponse("OK", status=200)
 
 api = NinjaAPI()
 api.add_router("/clinical/", clinical_router, tags=["legacy"], url_name_prefix="legacy")
@@ -39,4 +43,5 @@ urlpatterns = [
     path("retrigger-timeline/", RetriggerTimelineTaskView.as_view(), name="retrigger_timeline"),
     path("admin/", admin.site.urls),
     path("api/", api.urls),
+    path("health", health_check, name="health"),
 ]

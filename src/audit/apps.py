@@ -6,4 +6,4 @@ class AuditConfig(AppConfig):
     name = "audit"
 
     def ready(self):
-        pass
+        import audit.signals  # noqa: F401

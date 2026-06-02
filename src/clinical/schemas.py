@@ -25,7 +25,6 @@ def _convert_dict_keys(d: dict[str, Any]) -> dict[str, Any]:
 
 class EntityPayload(BaseModel):
     entity_type: str
-    hierarchy_level: int
     payload: dict[str, Any]
 
     @model_validator(mode="after")

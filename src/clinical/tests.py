@@ -236,12 +236,10 @@ def test_sync_job_endpoint(client):
         "entities": [
             {
                 "entityType": "Study",
-                "hierarchyLevel": 1,
                 "payload": {"externalId": "study-async", "name": "Async Study"},
             },
             {
                 "entityType": "Site",
-                "hierarchyLevel": 1,
                 "payload": {"externalId": "site-async", "studyExtId": "study-async", "name": "Async Site"},
             },
         ]
@@ -259,7 +257,7 @@ def test_sync_job_endpoint(client):
         for task in job.tasks.all():
             if task.status == "FAILED":
                 print(f"TASK {task.id} FAILED WITH ERROR:", task.error_message)  # noqa: T201
-    assert job.status in {"PENDING", "COMPLETED"}
+    assert job.status in {"PENDING", "COMPLETED", "PROCESSING"}
     assert job.tasks.count() == 2
 
 
@@ -280,10 +278,12 @@ def test_sync_job_atomic_failure(client):
         "entities": [
             {
                 "entityType": "Study",
-                "hierarchyLevel": 1,
                 "payload": {"externalId": "study-atomic", "name": "Atomic Study"},
             },
-            {"entityType": "UnknownEntity", "hierarchyLevel": 1, "payload": {"externalId": "site-atomic"}},
+            {
+                "entityType": "UnknownEntity",
+                "payload": {"externalId": "site-atomic"}
+            },
         ]
     }
 

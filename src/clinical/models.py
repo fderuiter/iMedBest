@@ -315,7 +315,7 @@ class SyncJob(models.Model):
 class SyncTask(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     job = models.ForeignKey(SyncJob, on_delete=models.CASCADE, related_name="tasks")
-    hierarchy_level = models.IntegerField()  # 1=Study/Site, 2=Subject/Form/Interval, 3=Variable/Visit, 4=Record/etc
+    dependencies = models.ManyToManyField("self", symmetrical=False, related_name="dependents", blank=True)
     entity_type = models.CharField(max_length=50)  # e.g. 'Study', 'Subject'
     payload = models.JSONField()
     status = models.CharField(

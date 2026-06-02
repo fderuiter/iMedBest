@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
-def process_sync_task(self, task_id, user_id):
+def process_sync_task(self, task_id):
     task = SyncTask.objects.get(id=task_id)
     try:
         task.status = "PROCESSING"
@@ -32,7 +32,7 @@ def process_sync_task(self, task_id, user_id):
         # Queue child tasks if any are waiting for this parent
         child_tasks = SyncTask.objects.filter(parent_task_id=task.id, status="PENDING")
         for child in child_tasks:
-            process_sync_task.delay(child.id, user_id)
+            process_sync_task.delay(child.id)
 
         # Check if job is completed
         job = task.job
@@ -57,7 +57,7 @@ def process_sync_task(self, task_id, user_id):
 
 
 @shared_task(acks_late=True, reject_on_worker_lost=True)
-def orchestrate_sync_job(job_id, user_id):
+def orchestrate_sync_job(job_id):
     job = SyncJob.objects.get(id=job_id)
     job.status = "PROCESSING"
     job.save(update_fields=["status"])
@@ -87,7 +87,7 @@ def orchestrate_sync_job(job_id, user_id):
         # For this requirement, let's just group tasks by level, and dispatch them level by level.
         # To do this safely and simply in Celery without complex canvases, we can process a level,
         # then queue a task to process the next level.
-        process_level.delay(job_id, 1, user_id)
+        process_level.delay(job_id, 1)
 
     except Exception as e:
         job.status = "FAILED"
@@ -96,7 +96,7 @@ def orchestrate_sync_job(job_id, user_id):
 
 
 @shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
-def process_level(self, job_id, level, user_id):
+def process_level(self, job_id, level):
     job = SyncJob.objects.get(id=job_id)
     tasks = SyncTask.objects.filter(job=job, hierarchy_level=level, status="PENDING")
 
@@ -105,7 +105,7 @@ def process_level(self, job_id, level, user_id):
         next_tasks = SyncTask.objects.filter(job=job, hierarchy_level__gt=level)
         if next_tasks.exists():
             next_level = next_tasks.order_by("hierarchy_level").first().hierarchy_level
-            process_level.delay(job_id, next_level, user_id)
+            process_level.delay(job_id, next_level)
         else:
             job.status = "COMPLETED"
             job.save(update_fields=["status"])
@@ -120,15 +120,15 @@ def process_level(self, job_id, level, user_id):
         # In a real system, we'd use process_sync_task.delay()
         # For simplicity in this job, we process them inline if we want, or use group
         # Let's call a subtask for each
-        process_single_task.delay(task.id, user_id)
+        process_single_task.delay(task.id)
 
     # We need a way to check when they are done.
     # Let's queue a monitoring task that checks if level is done.
-    check_level_completion.apply_async((job_id, level, user_id), countdown=2)
+    check_level_completion.apply_async((job_id, level), countdown=2)
 
 
 @shared_task(bind=True, max_retries=5, acks_late=True, reject_on_worker_lost=True)
-def process_single_task(self, task_id, user_id):
+def process_single_task(self, task_id):
     task = SyncTask.objects.get(id=task_id)
     if task.status != "PENDING":
         return
@@ -137,7 +137,7 @@ def process_single_task(self, task_id, user_id):
     task.save(update_fields=["status"])
 
     try:
-        from users.models import User
+        from audit.middleware import get_current_request
 
         from .api import (
             CodingSchemaIn,
@@ -164,15 +164,7 @@ def process_single_task(self, task_id, user_id):
             sync_visit,
         )
 
-        user = User.objects.get(id=user_id)
-
-        # Mock request object
-        class MockRequest:
-            def __init__(self, user):
-                self.user = user
-                self.META = {}
-
-        request = MockRequest(user)
+        request = get_current_request()
 
         payload = task.payload
         entity_type = task.entity_type
@@ -218,7 +210,7 @@ def process_single_task(self, task_id, user_id):
 
 
 @shared_task(acks_late=True, reject_on_worker_lost=True)
-def check_level_completion(job_id, level, user_id):
+def check_level_completion(job_id, level):
     job = SyncJob.objects.get(id=job_id)
     if job.status == "FAILED":
         return  # Stop processing
@@ -226,14 +218,14 @@ def check_level_completion(job_id, level, user_id):
     tasks = SyncTask.objects.filter(job=job, hierarchy_level=level)
     if tasks.exclude(status__in=["COMPLETED", "FAILED"]).exists():
         # Still processing, check again later
-        check_level_completion.apply_async((job_id, level, user_id), countdown=2)
+        check_level_completion.apply_async((job_id, level), countdown=2)
         return
 
     # All processing finished for this level (completed or failed), proceed to next level
     next_tasks = SyncTask.objects.filter(job=job, hierarchy_level__gt=level)
     if next_tasks.exists():
         next_level = next_tasks.order_by("hierarchy_level").first().hierarchy_level
-        process_level.delay(job_id, next_level, user_id)
+        process_level.delay(job_id, next_level)
     else:
         job.status = "COMPLETED"
         job.save(update_fields=["status"])

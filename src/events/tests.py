@@ -7,12 +7,12 @@ from events.tasks import process_delivery_attempt
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-@pytest.fixture()
+@pytest.fixture
 def test_subscription():
     return Subscription.objects.create(name="Test Sub", endpoint_url="http://mock.endpoint/webhook", event_type="")
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_hierarchy():
     study = Study.objects.create(external_id="study1", name="Study 1")
     site = Site.objects.create(external_id="site1", name="Site 1", study=study)

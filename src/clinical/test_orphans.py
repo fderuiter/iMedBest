@@ -25,7 +25,7 @@ def process_all_jobs():
             break
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_reactive_orphan_buffering(client):
     headers = get_auth_headers()
     # Setup some base level 1 and 2
@@ -105,7 +105,7 @@ def test_reactive_orphan_buffering(client):
     assert record.value == "120/80"
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_orphans_endpoint(client):
     headers = get_auth_headers()
     # This shouldn't do anything because we don't have orphans right now

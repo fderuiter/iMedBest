@@ -656,7 +656,7 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
 
         # Trigger celery orchestrator
         from clinical.tasks import orchestrate_sync_job
-        orchestrate_sync_job.delay(job.id, request.user.id)
+        orchestrate_sync_job.delay(job.id)
 
         from clinical.tasks import run_validation_for_job
         run_validation_for_job.delay(job.id)
@@ -1450,4 +1450,3 @@ def create_validation_rule(request, payload: ValidationRuleSchemaIn):
 @router.get("/validation-rules", response=list[ValidationRuleSchemaOut])
 def list_validation_rules(request):
     return ValidationRule.objects.all()
-

@@ -39,6 +39,7 @@ def process_sync_task(self, task_id, user_id):
         if not job.tasks.exclude(status="COMPLETED").exists():
             job.status = "COMPLETED"
             job.save(update_fields=["status"])
+            run_validation_for_job.delay(job.id)
 
     except Exception as exc:
         task.error_message = str(exc)
@@ -81,6 +82,7 @@ def process_next_ready_tasks(self, job_id, user_id):
         if not SyncTask.objects.filter(job=job, status="PROCESSING").exists():
             job.status = "COMPLETED"
             job.save(update_fields=["status"])
+            run_validation_for_job.delay(job.id)
         return
 
     started_any = False
@@ -103,7 +105,7 @@ def process_next_ready_tasks(self, job_id, user_id):
                 task.error_message = "Dependency failed"
                 task.save(update_fields=["status", "error_message"])
                 failed_dependencies = True
-        
+
         if failed_dependencies:
             # Trigger again to process downstream failures or finish job
             process_next_ready_tasks.apply_async((job_id, user_id), countdown=1)
@@ -343,3 +345,9 @@ def export_cdisc_task(job_id):
             job.status = "FAILED"
             job.error_message = str(e)
             job.save(update_fields=["status", "error_message"])
+
+
+@shared_task
+def run_validation_for_job(job_id):
+    from clinical.validation.engine import execute_validation_for_job
+    execute_validation_for_job(job_id)

@@ -52,7 +52,7 @@ class AllManager(models.Manager):
 
 class ClinicalEntity(models.Model):
     external_id = models.CharField(max_length=255)
-    provider = models.ForeignKey("clinical.Provider", on_delete=models.PROTECT, null=True, blank=True)
+    provider = models.ForeignKey("clinical.Provider", on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
@@ -257,6 +257,7 @@ class RecordRevision(ClinicalEntity):
 def create_record_revision(sender, instance, created, **kwargs):
     RecordRevision.objects.create(
         external_id=str(uuid.uuid4()),
+        provider=instance.provider,
         record=instance,
         value=instance.value,
         clinical_timestamp=instance.clinical_timestamp,
@@ -277,7 +278,7 @@ def trigger_longitudinal_reconstruction(sender, instance, created, update_fields
 
 
 class BufferedOrphan(models.Model):
-    provider = models.ForeignKey("clinical.Provider", on_delete=models.CASCADE, null=True, blank=True)
+    provider = models.ForeignKey("clinical.Provider", on_delete=models.CASCADE)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     entity_type = models.CharField(max_length=50)
     missing_parent_id = models.CharField(max_length=255)
@@ -291,7 +292,7 @@ class BufferedOrphan(models.Model):
 
 
 class SyncJob(models.Model):
-    provider = models.ForeignKey("clinical.Provider", on_delete=models.CASCADE, null=True, blank=True)
+    provider = models.ForeignKey("clinical.Provider", on_delete=models.CASCADE)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     status = models.CharField(
         max_length=50,

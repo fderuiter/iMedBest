@@ -96,13 +96,7 @@ class Command(BaseCommand):
 
     def execute_task(self, task):
         from clinical.adapter import MultiVendorAdapter
-
-        class MockRequest:
-            def __init__(self, user, provider):
-                self.user = user
-                self.user_roles = ["cdisc"]
-                self.provider = provider
-                self.META = {}
+        from clinical.utils import MockRequest
 
         request = MockRequest(task.job.user, task.job.provider)
         payload = task.payload

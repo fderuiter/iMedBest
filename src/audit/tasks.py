@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task
-def create_audit_log_task(action, model_name, object_id, changes, user_id, ip_address, user_agent):  # noqa: PLR0913
+def create_audit_log_task(action, model_name, object_id, changes, user_id, ip_address, user_agent, study_id=None):  # noqa: PLR0913
     try:
         AuditLog.objects.create(
             action=action,
@@ -17,6 +17,7 @@ def create_audit_log_task(action, model_name, object_id, changes, user_id, ip_ad
             object_id=object_id,
             changes=changes,
             user_id=user_id,
+            study_id=study_id,
             ip_address=ip_address,
             user_agent=user_agent,
         )

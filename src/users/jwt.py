@@ -1,9 +1,11 @@
 import datetime
 
 import jwt
-from jwt import PyJWKClient
+import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from jwt import PyJWKClient
+
 from users.models import OIDCConfiguration
 
 
@@ -25,8 +27,6 @@ def decode_jwt_token(token):
     except jwt.PyJWTError:
         pass
 
-    import requests
-
     # If it fails, try OIDC providers
     for config in OIDCConfiguration.objects.filter(is_active=True):
         try:
@@ -45,7 +45,12 @@ def decode_jwt_token(token):
                 audience=config.client_id,
             )
 
-            email = payload.get("email") or payload.get("upn") or payload.get("preferred_username") or payload.get("unique_name")
+            email = (
+                payload.get("email")
+                or payload.get("upn")
+                or payload.get("preferred_username")
+                or payload.get("unique_name")
+            )
             user_id = payload.get("oid") or payload.get("sub")
 
             if not email:
@@ -54,7 +59,7 @@ def decode_jwt_token(token):
             user_model = get_user_model()
             user, _ = user_model.objects.get_or_create(username=user_id, defaults={"email": email})
             return user
-        except Exception as e:
+        except Exception:  # noqa: S112
             continue
 
     return None

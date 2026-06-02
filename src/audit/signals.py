@@ -5,7 +5,6 @@ from django.dispatch import receiver
 from django.forms.models import model_to_dict
 
 from .middleware import get_current_request
-from .models import AuditLog
 from .tasks import create_audit_log_task
 
 EXCLUDED_MODELS = ["AuditLog", "Session", "LogEntry", "ContentType", "Permission", "Group", "Revision", "Migration"]

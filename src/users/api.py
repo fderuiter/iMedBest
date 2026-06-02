@@ -1,10 +1,12 @@
 import urllib.parse
+
 import requests
+from django.contrib.auth import get_user_model
 from django.shortcuts import redirect
 from ninja import Router
-from django.contrib.auth import get_user_model
-from .models import OIDCConfiguration
+
 from .jwt import create_jwt_token
+from .models import OIDCConfiguration
 
 router = Router()
 User = get_user_model()
@@ -33,7 +35,7 @@ def oidc_login(request, provider: str):
 
 
 @router.get("/oidc/callback")
-def oidc_callback(request, provider: str, code: str = None):
+def oidc_callback(request, provider: str, code: str | None = None):
     if not code:
         return {"error": "Missing authorization code"}
 

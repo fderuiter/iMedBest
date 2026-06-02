@@ -1,10 +1,10 @@
 import pytest
-from django.test import override_settings
 from django.contrib.auth import get_user_model
+
+from clinical.management.commands.run_sync_worker import Command as WorkerCommand
 from users.jwt import create_jwt_token
 
 from .models import Record, SyncJob
-from clinical.management.commands.run_sync_worker import Command as WorkerCommand
 
 
 def get_auth_headers(study_key="test-study"):
@@ -17,7 +17,7 @@ def get_auth_headers(study_key="test-study"):
 def process_all_jobs():
     worker = WorkerCommand()
     while True:
-        jobs = SyncJob.objects.filter(status__in=['PENDING', 'PROCESSING'])
+        jobs = SyncJob.objects.filter(status__in=["PENDING", "PROCESSING"])
         processed = False
         for job in jobs:
             if worker.process_job(job):
@@ -26,22 +26,24 @@ def process_all_jobs():
             break
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_multi_level_data_import(client):
     headers = get_auth_headers("study-1")
     # Level 1
     study_resp = client.post(
         "/api/clinical/studies",
         data={"externalId": "study-1", "name": "Study 1"},
-        content_type="application/json", **headers
+        content_type="application/json",
+        **headers,
     )
-    print(study_resp.json())
+    print(study_resp.json())  # noqa: T201
     assert study_resp.status_code == 200
 
     site_resp = client.post(
         "/api/clinical/sites",
         data={"externalId": "site-1", "studyExtId": "study-1", "name": "Site 1"},
-        content_type="application/json", **headers
+        content_type="application/json",
+        **headers,
     )
     assert site_resp.status_code == 200
 
@@ -49,21 +51,24 @@ def test_multi_level_data_import(client):
     subject_resp = client.post(
         "/api/clinical/subjects",
         data={"externalId": "sub-1", "siteExtId": "site-1", "name": "Subject 1"},
-        content_type="application/json", **headers
+        content_type="application/json",
+        **headers,
     )
     assert subject_resp.status_code == 200
 
     form_resp = client.post(
         "/api/clinical/forms",
         data={"externalId": "form-1", "studyExtId": "study-1", "name": "Form 1"},
-        content_type="application/json", **headers
+        content_type="application/json",
+        **headers,
     )
     assert form_resp.status_code == 200
 
     int_resp = client.post(
         "/api/clinical/intervals",
         data={"externalId": "int-1", "studyExtId": "study-1", "name": "Interval 1"},
-        content_type="application/json", **headers
+        content_type="application/json",
+        **headers,
     )
     assert int_resp.status_code == 200
 
@@ -71,14 +76,16 @@ def test_multi_level_data_import(client):
     var_resp = client.post(
         "/api/clinical/variables",
         data={"externalId": "var-1", "formExtId": "form-1", "name": "Variable 1"},
-        content_type="application/json", **headers
+        content_type="application/json",
+        **headers,
     )
     assert var_resp.status_code == 200
 
     visit_resp = client.post(
         "/api/clinical/visits",
         data={"externalId": "visit-1", "subjectExtId": "sub-1", "intervalExtId": "int-1"},
-        content_type="application/json", **headers
+        content_type="application/json",
+        **headers,
     )
     assert visit_resp.status_code == 200
 
@@ -86,7 +93,8 @@ def test_multi_level_data_import(client):
     record_resp = client.post(
         "/api/clinical/records",
         data={"externalId": "rec-1", "visitExtId": "visit-1", "variableExtId": "var-1", "value": "120/80"},
-        content_type="application/json", **headers
+        content_type="application/json",
+        **headers,
     )
     assert record_resp.status_code == 200
 
@@ -97,44 +105,89 @@ def test_multi_level_data_import(client):
     assert record.visit.subject.site.study.external_id == "study-1"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_longitudinal_reconstruction(client):
     headers = get_auth_headers("study-2")
     # Setup data
-    client.post("/api/clinical/studies", data={"externalId": "study-2", "name": "Study 2"}, content_type="application/json", **headers)
-    client.post("/api/clinical/sites", data={"externalId": "site-2", "studyExtId": "study-2", "name": "Site 2"}, content_type="application/json", **headers)
-    client.post("/api/clinical/subjects", data={"externalId": "sub-2", "siteExtId": "site-2", "name": "Subject 2"}, content_type="application/json", **headers)
-    client.post("/api/clinical/intervals", data={"externalId": "int-2", "studyExtId": "study-2", "name": "Interval 2"}, content_type="application/json", **headers)
-    client.post("/api/clinical/forms", data={"externalId": "form-2", "studyExtId": "study-2", "name": "Form 2"}, content_type="application/json", **headers)
-    client.post("/api/clinical/variables", data={"externalId": "var-2", "formExtId": "form-2", "name": "Variable 2"}, content_type="application/json", **headers)
+    client.post(
+        "/api/clinical/studies",
+        data={"externalId": "study-2", "name": "Study 2"},
+        content_type="application/json",
+        **headers,
+    )
+    client.post(
+        "/api/clinical/sites",
+        data={"externalId": "site-2", "studyExtId": "study-2", "name": "Site 2"},
+        content_type="application/json",
+        **headers,
+    )
+    client.post(
+        "/api/clinical/subjects",
+        data={"externalId": "sub-2", "siteExtId": "site-2", "name": "Subject 2"},
+        content_type="application/json",
+        **headers,
+    )
+    client.post(
+        "/api/clinical/intervals",
+        data={"externalId": "int-2", "studyExtId": "study-2", "name": "Interval 2"},
+        content_type="application/json",
+        **headers,
+    )
+    client.post(
+        "/api/clinical/forms",
+        data={"externalId": "form-2", "studyExtId": "study-2", "name": "Form 2"},
+        content_type="application/json",
+        **headers,
+    )
+    client.post(
+        "/api/clinical/variables",
+        data={"externalId": "var-2", "formExtId": "form-2", "name": "Variable 2"},
+        content_type="application/json",
+        **headers,
+    )
 
     # Baseline visit
-    client.post("/api/clinical/visits", data={
-        "externalId": "visit-base",
-        "subjectExtId": "sub-2",
-        "intervalExtId": "int-2",
-        "clinicalTimestamp": "2024-01-01T10:00:00Z"
-    }, content_type="application/json", **headers)
+    client.post(
+        "/api/clinical/visits",
+        data={
+            "externalId": "visit-base",
+            "subjectExtId": "sub-2",
+            "intervalExtId": "int-2",
+            "clinicalTimestamp": "2024-01-01T10:00:00Z",
+        },
+        content_type="application/json",
+        **headers,
+    )
 
     # Record at Day 10
-    client.post("/api/clinical/records", data={
-        "externalId": "rec-day10",
-        "visitExtId": "visit-base",
-        "variableExtId": "var-2",
-        "value": "90",
-        "clinicalTimestamp": "2024-01-11T10:00:00Z",
-        "sourceSequence": 2
-    }, content_type="application/json", **headers)
+    client.post(
+        "/api/clinical/records",
+        data={
+            "externalId": "rec-day10",
+            "visitExtId": "visit-base",
+            "variableExtId": "var-2",
+            "value": "90",
+            "clinicalTimestamp": "2024-01-11T10:00:00Z",
+            "sourceSequence": 2,
+        },
+        content_type="application/json",
+        **headers,
+    )
 
     # Record at Day 5 (ingested out of order)
-    client.post("/api/clinical/records", data={
-        "externalId": "rec-day5",
-        "visitExtId": "visit-base",
-        "variableExtId": "var-2",
-        "value": "85",
-        "clinicalTimestamp": "2024-01-06T10:00:00Z",
-        "sourceSequence": 1
-    }, content_type="application/json", **headers)
+    client.post(
+        "/api/clinical/records",
+        data={
+            "externalId": "rec-day5",
+            "visitExtId": "visit-base",
+            "variableExtId": "var-2",
+            "value": "85",
+            "clinicalTimestamp": "2024-01-06T10:00:00Z",
+            "sourceSequence": 1,
+        },
+        content_type="application/json",
+        **headers,
+    )
 
     process_all_jobs()
 
@@ -149,30 +202,32 @@ def test_longitudinal_reconstruction(client):
     resp = client.get("/api/clinical/export/cdisc", **headers)
     assert resp.status_code == 200
     job_id = resp.json()["job_id"]
-    
+
     resp_dl = client.get(f"/api/clinical/export/cdisc/{job_id}/download", **headers)
     if resp_dl.status_code != 200:
         from clinical.models import ExportJob
+
         job = ExportJob.objects.get(id=job_id)
-        print("FAILED JOB:", job.status, job.error_message)
+        print("FAILED JOB:", job.status, job.error_message)  # noqa: T201
     assert resp_dl.status_code == 200
 
     import io
     import zipfile
-    import xml.etree.ElementTree as ET
+    from xml.etree import ElementTree
 
     z = zipfile.ZipFile(io.BytesIO(resp_dl.content))
-    xml_data = z.read("cdisc_export.xml").decode('utf-8')
-    root = ET.fromstring(xml_data)
-    
+    xml_data = z.read("cdisc_export.xml").decode("utf-8")
+    root = ElementTree.fromstring(xml_data)  # noqa: S314
+
     ns = {"odm": "http://www.cdisc.org/ns/odm/v1.3"}
     item_datas = root.findall(".//odm:ItemData", ns)
-    
+
     # We expect the ordering to match the source_sequence: rec-day5 then rec-day10
     values = [item.get("Value") for item in item_datas if item.get("ItemOID") == "var-2"]
     assert values == ["85", "90"]
 
-@pytest.mark.django_db
+
+@pytest.mark.django_db()
 def test_sync_job_endpoint(client):
     headers = get_auth_headers("study-async")
     from clinical.models import SyncJob
@@ -182,21 +237,17 @@ def test_sync_job_endpoint(client):
             {
                 "entityType": "Study",
                 "hierarchyLevel": 1,
-                "payload": {"externalId": "study-async", "name": "Async Study"}
+                "payload": {"externalId": "study-async", "name": "Async Study"},
             },
             {
                 "entityType": "Site",
                 "hierarchyLevel": 1,
-                "payload": {"externalId": "site-async", "studyExtId": "study-async", "name": "Async Site"}
-            }
+                "payload": {"externalId": "site-async", "studyExtId": "study-async", "name": "Async Site"},
+            },
         ]
     }
 
-    resp = client.post(
-        "/api/clinical/sync-jobs",
-        data=payload,
-        content_type="application/json", **headers
-    )
+    resp = client.post("/api/clinical/sync-jobs", data=payload, content_type="application/json", **headers)
     assert resp.status_code == 200
     data = resp.json()
     assert "jobId" in data
@@ -204,46 +255,42 @@ def test_sync_job_endpoint(client):
     job_id = data["jobId"]
     job = SyncJob.objects.get(id=job_id)
     if job.status == "FAILED":
-        print("JOB FAILED WITH ERROR:", job.error_message)
+        print("JOB FAILED WITH ERROR:", job.error_message)  # noqa: T201
         for task in job.tasks.all():
             if task.status == "FAILED":
-                print(f"TASK {task.id} FAILED WITH ERROR:", task.error_message)
-    assert job.status == "PENDING" or job.status == "COMPLETED"
+                print(f"TASK {task.id} FAILED WITH ERROR:", task.error_message)  # noqa: T201
+    assert job.status in {"PENDING", "COMPLETED"}
     assert job.tasks.count() == 2
 
-@pytest.mark.django_db
+
+@pytest.mark.django_db()
 def test_sync_job_atomic_failure(client):
     headers = get_auth_headers("study-atomic")
-    
+
     # We will send a valid study and an invalid site (e.g. unknown external id for study)
     # wait, MultiVendorAdapter.sync_entity might just buffer it as an orphan if the parent is missing.
     # What causes an exception in sync_entity?
-    # Providing an invalid schema field, e.g. a date string that is totally invalid causing ValueError, or missing a required field that the DB enforces.
+    # Providing an invalid schema field, e.g. a date string that is totally
+    # invalid causing ValueError, or missing a required field that the DB enforces.
     # Let's see: Study requires 'name'. If we omit name... well, name has max_length.
-    # Better: trigger a LookupError by providing an unknown entity_type!
-    
+    # Better: trigger a LookupError by providing
+    # an unknown entity_type!
+
     payload = {
         "entities": [
             {
                 "entityType": "Study",
                 "hierarchyLevel": 1,
-                "payload": {"externalId": "study-atomic", "name": "Atomic Study"}
+                "payload": {"externalId": "study-atomic", "name": "Atomic Study"},
             },
-            {
-                "entityType": "UnknownEntity",
-                "hierarchyLevel": 1,
-                "payload": {"externalId": "site-atomic"}
-            }
+            {"entityType": "UnknownEntity", "hierarchyLevel": 1, "payload": {"externalId": "site-atomic"}},
         ]
     }
-    
-    resp = client.post(
-        "/api/clinical/sync-jobs",
-        data=payload,
-        content_type="application/json", **headers
-    )
+
+    resp = client.post("/api/clinical/sync-jobs", data=payload, content_type="application/json", **headers)
     assert resp.status_code == 400
-    
+
     # Verify rollback: Study should NOT be created
     from clinical.models import Study
+
     assert not Study.objects.filter(external_id="study-atomic").exists()

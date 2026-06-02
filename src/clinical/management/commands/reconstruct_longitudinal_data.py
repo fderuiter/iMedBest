@@ -10,13 +10,14 @@ class Command(BaseCommand):
         # The backfilling should estimate clinical_timestamp from created_at if missing
         self.stdout.write("Backfilling missing clinical_timestamps with created_at...")
         from clinical.models import Form, Interval, Site, Study, Variable
+
         for model in [Study, Site, Subject, Form, Interval, Variable, Visit, Record, Coding, Query, RecordRevision]:
             records_to_update = []
             for obj in model.objects.filter(clinical_timestamp__isnull=True):
                 obj.clinical_timestamp = obj.created_at
                 records_to_update.append(obj)
             if records_to_update:
-                model.objects.bulk_update(records_to_update, ['clinical_timestamp'])
+                model.objects.bulk_update(records_to_update, ["clinical_timestamp"])
 
         self.stdout.write("Recalculating offsets...")
         # Since offset_days depends on the subject's baseline, and a subject's baseline depends on Visit,
@@ -38,22 +39,22 @@ class Command(BaseCommand):
                         if baseline:
                             obj.offset_days = (obj.clinical_timestamp.date() - baseline.date()).days
                             records_to_update.append(obj)
-                except Exception:
+                except Exception:  # noqa: S110
                     pass
             if records_to_update:
-                model.objects.bulk_update(records_to_update, ['offset_days'])
+                model.objects.bulk_update(records_to_update, ["offset_days"])
 
         # Update sequences (e.g. source_sequence) if not set.
         # We can just leave them if they are not set, or backfill them sequentially.
         # For VS (Record), order by clinical_timestamp then set source_sequence
         for subject in subjects:
-            records = Record.objects.filter(visit__subject=subject).order_by('clinical_timestamp', 'created_at')
+            records = Record.objects.filter(visit__subject=subject).order_by("clinical_timestamp", "created_at")
             records_to_update_seq = []
             for seq, rec in enumerate(records, start=1):
                 if rec.source_sequence is None:
                     rec.source_sequence = seq
                     records_to_update_seq.append(rec)
             if records_to_update_seq:
-                Record.objects.bulk_update(records_to_update_seq, ['source_sequence'])
+                Record.objects.bulk_update(records_to_update_seq, ["source_sequence"])
 
         self.stdout.write("Done.")

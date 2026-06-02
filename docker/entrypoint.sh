@@ -2,6 +2,14 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
+# Derive DATABASE_HOST from DATABASE_URL if not explicitly set
+if [ -z "$DATABASE_HOST" ] && [ -n "$DATABASE_URL" ]; then
+    # Extract host from postgres://user:pass@host:port/db
+    DATABASE_HOST=$(echo "$DATABASE_URL" | sed -E 's|.*@([^:/]+)[:/].*|\1|')
+    DATABASE_PORT=$(echo "$DATABASE_URL" | sed -E 's|.*:([0-9]+)/.*|\1|')
+    DATABASE_USER=$(echo "$DATABASE_URL" | sed -E 's|[^/]*//([^:]+):.*|\1|')
+fi
+
 # Wait for PostgreSQL to become available
 if [ -n "$DATABASE_HOST" ]; then
     echo "Waiting for database at $DATABASE_HOST:${DATABASE_PORT:-5432}..."

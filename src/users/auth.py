@@ -12,15 +12,17 @@ from .models import OIDCConfiguration
 
 User = get_user_model()
 
+
 @lru_cache(maxsize=10)
 def get_jwks_uri(discovery_url):
     try:
         resp = requests.get(discovery_url, timeout=5)
         if resp.status_code == 200:
             return resp.json().get("jwks_uri")
-    except Exception:
+    except Exception:  # noqa: S110
         pass
     return None
+
 
 class OIDCBearer(HttpBearer):
     def __call__(self, request: HttpRequest) -> Any | None:
@@ -28,29 +30,25 @@ class OIDCBearer(HttpBearer):
         if not result:
             from audit.models import AuditLog
             from audit.signals import get_client_ip
+
             ip_address = get_client_ip(request)
-            user_agent = request.META.get('HTTP_USER_AGENT')
+            user_agent = request.META.get("HTTP_USER_AGENT")
             AuditLog.objects.create(
-                action='SECURITY',
-                model_name='ClinicalAPI',
-                ip_address=ip_address,
-                user_agent=user_agent
+                action="SECURITY", model_name="ClinicalAPI", ip_address=ip_address, user_agent=user_agent
             )
         return result
 
     def authenticate(self, request, token):
         try:
             unverified_claims = jwt.decode(token, options={"verify_signature": False})
-            audience = unverified_claims.get("aud")
-            issuer = unverified_claims.get("iss")
+            _ = unverified_claims.get("aud")  # audience — not used for routing but parsed for future use
+            _ = unverified_claims.get("iss")  # issuer — not used for routing but parsed for future use
         except Exception:
             return None
 
         configs = OIDCConfiguration.objects.filter(is_active=True)
-        # If audience is an app ID, try matching
 
         valid_user = None
-        user_roles = []
         for config in configs:
             jwks_uri = get_jwks_uri(config.discovery_url)
             if not jwks_uri:
@@ -64,7 +62,7 @@ class OIDCBearer(HttpBearer):
                     signing_key.key,
                     algorithms=["RS256"],
                     audience=config.client_id,
-                    options={"verify_issuer": False}
+                    options={"verify_issuer": False},
                 )
 
                 email = data.get("email") or data.get("preferred_username") or data.get("upn")
@@ -73,21 +71,17 @@ class OIDCBearer(HttpBearer):
 
                 user, _ = User.objects.get_or_create(username=email, defaults={"email": email})
                 roles = data.get("roles", [])
-                
+
                 # Assign is_staff if "Admin" in roles
                 is_admin = "Admin" in str(roles)
                 if user.is_staff != is_admin:
                     user.is_staff = is_admin
                     user.save(update_fields=["is_staff"])
 
-                if "Export" in str(roles) or "Extractor" in str(roles) or "CDISC" in str(roles) or getattr(user, 'is_staff', False):
-                    # We might need to store roles if the check is done in the endpoint
-                    pass
-
                 request.user_roles = roles
                 valid_user = user
                 break
-            except Exception:
+            except Exception:  # noqa: S112
                 continue
 
         if valid_user:

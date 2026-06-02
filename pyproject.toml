@@ -66,6 +66,16 @@ select = [
 ignore = [
     "PLR2004", # Magic value comparison
     "S101",    # Allow assert statements (useful for testing)
+    "N803",    # camelCase args required by external API spec (studyKey, siteKey, etc.)
+    "N806",    # camelCase vars in functions (same reason as above)
+    "PLC0415", # Deferred imports are intentional to avoid circular dependencies
+    "E402",    # Mid-module imports used in AppConfig.ready() and signal connection patterns
+    "PTH",     # os.path is used consistently throughout; pathlib migration is a separate task
+    "RUF012",  # Django Meta class list/dict attributes don't need ClassVar annotations by convention
+    "PLR0912", # Too many branches — some dispatch functions are inherently complex state machines
+    "PLR0915", # Too many statements — ODM XML writer is a single coherent operation
+    "RET504",  # Unnecessary assignment before return — often improves readability with named variables
+    "RUF100",  # Unused noqa directive (useful for cross-version linting compatibility)
 ]
 
 [tool.ruff.lint.extend-per-file-ignores]

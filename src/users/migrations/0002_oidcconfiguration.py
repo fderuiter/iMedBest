@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("users", "0001_initial"),
     ]
@@ -27,9 +26,7 @@ class Migration(migrations.Migration):
                 ("_client_secret", models.TextField(db_column="client_secret")),
                 (
                     "discovery_url",
-                    models.URLField(
-                        help_text="OIDC Provider Discovery URL (/.well-known/openid-configuration)"
-                    ),
+                    models.URLField(help_text="OIDC Provider Discovery URL (/.well-known/openid-configuration)"),
                 ),
                 ("is_active", models.BooleanField(default=True)),
             ],

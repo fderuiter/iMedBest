@@ -4,13 +4,13 @@ from django.db import models
 
 class AuditLog(models.Model):
     ACTION_CHOICES = (
-        ('CREATE', 'Create'),
-        ('UPDATE', 'Update'),
-        ('DELETE', 'Delete'),
-        ('LOGIN', 'Login'),
-        ('LOGOUT', 'Logout'),
-        ('SECURITY', 'Security'),
-        ('UNAUTH', 'Unauth'),
+        ("CREATE", "Create"),
+        ("UPDATE", "Update"),
+        ("DELETE", "Delete"),
+        ("LOGIN", "Login"),
+        ("LOGOUT", "Logout"),
+        ("SECURITY", "Security"),
+        ("UNAUTH", "Unauth"),
     )
 
     action = models.CharField(max_length=10, choices=ACTION_CHOICES)
@@ -24,7 +24,7 @@ class AuditLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['-timestamp']
+        ordering = ["-timestamp"]
 
     def __str__(self):
         return f"{self.action} {self.model_name} {self.object_id} by {self.user}"

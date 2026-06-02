@@ -3,22 +3,34 @@
 from django.db import migrations
 
 
-
 def assign_legacy_provider(apps, schema_editor):
-    Provider = apps.get_model('clinical', 'Provider')
-    provider, _ = Provider.objects.get_or_create(name='Legacy/Default')
+    Provider = apps.get_model("clinical", "Provider")
+    provider, _ = Provider.objects.get_or_create(name="Legacy/Default")
 
-    for model_name in ['Study', 'Site', 'Subject', 'Form', 'Interval', 'Variable', 'Visit', 'Record', 'Coding', 'Query', 'RecordRevision']:
-        Model = apps.get_model('clinical', model_name)
+    for model_name in [
+        "Study",
+        "Site",
+        "Subject",
+        "Form",
+        "Interval",
+        "Variable",
+        "Visit",
+        "Record",
+        "Coding",
+        "Query",
+        "RecordRevision",
+    ]:
+        Model = apps.get_model("clinical", model_name)
         Model.objects.filter(provider__isnull=True).update(provider=provider)
+
 
 def reverse_assign_legacy_provider(apps, schema_editor):
     pass
 
-class Migration(migrations.Migration):
 
+class Migration(migrations.Migration):
     dependencies = [
-        ('clinical', '0007_provider_alter_coding_external_id_and_more'),
+        ("clinical", "0007_provider_alter_coding_external_id_and_more"),
     ]
 
     operations = [

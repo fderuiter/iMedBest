@@ -1,9 +1,18 @@
-# ruff: noqa: RUF012, ERA001
+# ruff: noqa: ERA001
+import logging
 
+import ninja.orm
+import ninja.schema
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
 from ninja.security import APIKeyHeader, HttpBearer
+from pydantic.alias_generators import to_camel
+
+ninja.schema.Schema.model_config["alias_generator"] = to_camel
+ninja.schema.Schema.model_config["populate_by_name"] = True
+ninja.orm.ModelSchema.model_config["alias_generator"] = to_camel
+ninja.orm.ModelSchema.model_config["populate_by_name"] = True
 
 
 class JWTBearer(HttpBearer):
@@ -83,12 +92,17 @@ class IMednetAPIAuth(APIKeyHeader):
             return key
         return None
 
+
 def check_write_allowed(request):
     from ninja.errors import HttpError
+
     if getattr(request, "auth_method", "") == "SpecCompliant" or "/v1/" in request.path:
         raise HttpError(405, "Method Not Allowed")
 
-router = Router(auth=[JWTBearer(), IMednetAPIAuth()])
+
+router = Router(auth=[JWTBearer(), IMednetAPIAuth()], by_alias=True)
+
+logger = logging.getLogger(__name__)
 
 # --- Schemas ---
 
@@ -354,8 +368,6 @@ class CodingSchemaOut(ModelSchema):
         ]
 
 
-
-
 class QuerySchemaIn(ModelSchema):
     record_ext_id: str
     status: str | None = "OPEN"
@@ -424,6 +436,7 @@ from django.db.models import Q
 
 def get_accessible_studies(request):
     from users.models import SiteMembership, StudyMembership
+
     user = request.user
 
     qs = Study.objects.all()
@@ -446,6 +459,7 @@ def get_accessible_studies(request):
 
 def get_accessible_sites(request):
     from users.models import SiteMembership, StudyMembership
+
     user = request.user
 
     qs = Site.objects.all()
@@ -468,6 +482,7 @@ def get_accessible_sites(request):
 
 def get_accessible_subjects(request):
     from users.models import SiteMembership, StudyMembership
+
     user = request.user
 
     qs = Subject.objects.all()
@@ -531,7 +546,7 @@ def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_
 
 
 @router.post("/sync-jobs", response={200: SyncJobResponse, 400: dict})
-def create_sync_job(request, payload: SyncJobRequest, studyKey: str = None):
+def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = None):
     check_write_allowed(request)
     if not (request.user.is_staff or request.user.is_superuser):
         from users.models import SiteMembership
@@ -588,13 +603,13 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str = None):
 
 
 @router.get("/sync-jobs/{job_id}", response=JobStatusSchemaOut)
-def get_sync_job(request, job_id: str, studyKey: str = None):
+def get_sync_job(request, job_id: str, studyKey: str | None = None):
     return get_object_or_404(SyncJob, id=job_id, user=request.user)
 
 
 # L1: Study
 @router.post("/studies", response={200: SyncJobResponse, 400: dict})
-def api_sync_study(request, payload: StudySchemaIn, studyKey: str = None):
+def api_sync_study(request, payload: StudySchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 1, "Study", payload)
 
@@ -614,13 +629,13 @@ def sync_study(request, payload: StudySchemaIn):
 
 
 @router.get("/studies", response=list[StudySchemaOut])
-def list_studies(request, studyKey: str = None):
+def list_studies(request, studyKey: str | None = None):
     return get_accessible_studies(request)
 
 
 # L1: Site
 @router.post("/sites", response={200: SyncJobResponse, 400: dict})
-def api_sync_site(request, payload: SiteSchemaIn, studyKey: str = None):
+def api_sync_site(request, payload: SiteSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 1, "Site", payload)
 
@@ -647,13 +662,13 @@ def sync_site(request, payload: SiteSchemaIn):
 
 
 @router.get("/sites", response=list[SiteSchemaOut])
-def list_sites(request, studyKey: str = None):
+def list_sites(request, studyKey: str | None = None):
     return get_accessible_sites(request).select_related("study")
 
 
 # L2: Subject
 @router.post("/subjects", response={200: SyncJobResponse, 400: dict})
-def api_sync_subject(request, payload: SubjectSchemaIn, studyKey: str = None):
+def api_sync_subject(request, payload: SubjectSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 2, "Subject", payload)
 
@@ -680,13 +695,13 @@ def sync_subject(request, payload: SubjectSchemaIn):
 
 
 @router.get("/subjects", response=list[SubjectSchemaOut])
-def list_subjects(request, studyKey: str = None):
+def list_subjects(request, studyKey: str | None = None):
     return get_accessible_subjects(request).select_related("site")
 
 
 # L2: Form
 @router.post("/forms", response={200: SyncJobResponse, 400: dict})
-def api_sync_form(request, payload: FormSchemaIn, studyKey: str = None):
+def api_sync_form(request, payload: FormSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 2, "Form", payload)
 
@@ -713,13 +728,13 @@ def sync_form(request, payload: FormSchemaIn):
 
 
 @router.get("/forms", response=list[FormSchemaOut])
-def list_forms(request, studyKey: str = None):
+def list_forms(request, studyKey: str | None = None):
     return Form.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
 
 
 # L2: Interval
 @router.post("/intervals", response={200: SyncJobResponse, 400: dict})
-def api_sync_interval(request, payload: IntervalSchemaIn, studyKey: str = None):
+def api_sync_interval(request, payload: IntervalSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 2, "Interval", payload)
 
@@ -746,22 +761,20 @@ def sync_interval(request, payload: IntervalSchemaIn):
 
 
 @router.get("/intervals", response=list[IntervalSchemaOut])
-def list_intervals(request, studyKey: str = None):
+def list_intervals(request, studyKey: str | None = None):
     return Interval.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
 
 
 # L3: Variable
 @router.post("/variables", response={200: SyncJobResponse, 400: dict})
-def api_sync_variable(request, payload: VariableSchemaIn, studyKey: str = None):
+def api_sync_variable(request, payload: VariableSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 3, "Variable", payload)
 
 
 def sync_variable(request, payload: VariableSchemaIn):
     form = (
-        Form.objects.filter(study__in=get_accessible_studies(request))
-        .filter(external_id=payload.form_ext_id)
-        .first()
+        Form.objects.filter(study__in=get_accessible_studies(request)).filter(external_id=payload.form_ext_id).first()
     )
     if not form:
         BufferedOrphan.objects.create(
@@ -783,13 +796,13 @@ def sync_variable(request, payload: VariableSchemaIn):
 
 
 @router.get("/variables", response=list[VariableSchemaOut])
-def list_variables(request, studyKey: str = None):
+def list_variables(request, studyKey: str | None = None):
     return Variable.objects.filter(form__study__in=get_accessible_studies(request)).select_related("form")
 
 
 # L3: Visit
 @router.post("/visits", response={200: SyncJobResponse, 400: dict})
-def api_sync_visit(request, payload: VisitSchemaIn, studyKey: str = None):
+def api_sync_visit(request, payload: VisitSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 3, "Visit", payload)
 
@@ -826,13 +839,13 @@ def sync_visit(request, payload: VisitSchemaIn):
 
 
 @router.get("/visits", response=list[VisitSchemaOut])
-def list_visits(request, studyKey: str = None):
+def list_visits(request, studyKey: str | None = None):
     return Visit.objects.filter(subject__in=get_accessible_subjects(request)).select_related("subject", "interval")
 
 
 # L4: Record
 @router.post("/records", response={200: SyncJobResponse, 400: dict})
-def api_sync_record(request, payload: RecordSchemaIn, studyKey: str = None):
+def api_sync_record(request, payload: RecordSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 4, "Record", payload)
 
@@ -874,7 +887,7 @@ def sync_record(request, payload: RecordSchemaIn):
 
 
 @router.get("/records", response=list[RecordSchemaOut])
-def list_records(request, studyKey: str = None):
+def list_records(request, studyKey: str | None = None):
     return Record.objects.filter(visit__subject__in=get_accessible_subjects(request)).select_related(
         "visit", "variable"
     )
@@ -882,7 +895,7 @@ def list_records(request, studyKey: str = None):
 
 # L4: Coding
 @router.post("/codings", response={200: SyncJobResponse, 400: dict})
-def api_sync_coding(request, payload: CodingSchemaIn, studyKey: str = None):
+def api_sync_coding(request, payload: CodingSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 4, "Coding", payload)
 
@@ -913,15 +926,13 @@ def sync_coding(request, payload: CodingSchemaIn):
 
 
 @router.get("/codings", response=list[CodingSchemaOut])
-def list_codings(request, studyKey: str = None):
-    return Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related(
-        "record"
-    )
+def list_codings(request, studyKey: str | None = None):
+    return Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
 
 
 # L4: Query
 @router.post("/queries", response={200: SyncJobResponse, 400: dict})
-def api_sync_query(request, payload: QuerySchemaIn, studyKey: str = None):
+def api_sync_query(request, payload: QuerySchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 4, "Query", payload)
 
@@ -977,14 +988,12 @@ def sync_query(request, payload: QuerySchemaIn):
 
 
 @router.get("/queries", response=list[QuerySchemaOut])
-def list_queries(request, studyKey: str = None):
-    return Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related(
-        "record"
-    )
+def list_queries(request, studyKey: str | None = None):
+    return Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
 
 
 @router.patch("/queries/{query_id}", response=QuerySchemaOut)
-def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str = None):
+def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str | None = None):
     check_write_allowed(request)
     query = Query.objects.get(id=query_id, record__visit__subject__in=get_accessible_subjects(request))
     query.previous_status = query.status
@@ -1007,7 +1016,7 @@ def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str =
 
 # L4: RecordRevision
 @router.post("/revisions", response={200: SyncJobResponse, 400: dict})
-def api_sync_revision(request, payload: RecordRevisionSchemaIn, studyKey: str = None):
+def api_sync_revision(request, payload: RecordRevisionSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 4, "RecordRevision", payload)
 
@@ -1041,14 +1050,14 @@ def sync_revision(request, payload: RecordRevisionSchemaIn):
 
 
 @router.get("/revisions", response=list[RecordRevisionSchemaOut])
-def list_revisions(request, studyKey: str = None):
-    return RecordRevision.objects.filter(
-        record__visit__subject__in=get_accessible_subjects(request)
-    ).select_related("record")
+def list_revisions(request, studyKey: str | None = None):
+    return RecordRevision.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related(
+        "record"
+    )
 
 
 @router.get("/export/cdisc")
-def export_cdisc_package(request, studyKey: str = None):
+def export_cdisc_package(request, studyKey: str | None = None):
     # Check data-extraction privileges
     roles = getattr(request, "user_roles", [])
     has_privilege = any(r in str(roles).lower() for r in ["export", "extractor", "cdisc"])
@@ -1056,31 +1065,33 @@ def export_cdisc_package(request, studyKey: str = None):
         from django.http import HttpResponseForbidden
 
         return HttpResponseForbidden("Missing data-extraction privileges")
-    
+
     from clinical.models import ExportJob
     from clinical.tasks import export_cdisc_task
-    
+
     job = ExportJob.objects.create(user=request.user)
     # Trigger background task
     export_cdisc_task.delay(job.id)
-    
+
     return {"message": "Export job started.", "job_id": job.id}
+
 
 @router.get("/export/cdisc/{job_id}/download")
 def download_cdisc_package(request, job_id: int):
-    from django.http import HttpResponse, HttpResponseForbidden, Http404
+    from django.http import Http404, HttpResponse
+
     from clinical.models import ExportJob
     from clinical.storage import get_storage_adapter
-    
+
     try:
         job = ExportJob.objects.get(id=job_id)
-    except ExportJob.DoesNotExist:
-        raise Http404("Job not found")
-        
+    except ExportJob.DoesNotExist as exc:
+        raise Http404("Job not found") from exc
+
     adapter = get_storage_adapter()
-    if job.status != 'COMPLETED' or not job.file_path or not adapter.exists(job.file_path):
+    if job.status != "COMPLETED" or not job.file_path or not adapter.exists(job.file_path):
         return HttpResponse("Job not completed or file missing.", status=400)
-        
+
     response = HttpResponse(adapter.open(job.file_path, "rb"), content_type="application/zip")
     response["Content-Disposition"] = 'attachment; filename="cdisc_export.zip"'
     return response
@@ -1093,9 +1104,10 @@ class BufferedOrphanSchemaOut(ModelSchema):
 
 
 @router.get("/orphans", response=list[BufferedOrphanSchemaOut])
-def list_orphans(request, studyKey: str = None):
+def list_orphans(request, studyKey: str | None = None):
     if not (request.user.is_staff or request.user.is_superuser):
         from django.core.exceptions import PermissionDenied
+
         raise PermissionDenied("Admin access required")
     return BufferedOrphan.objects.all()
 
@@ -1112,8 +1124,7 @@ def check_and_process_orphans(parent_external_id):
             with transaction.atomic():
                 _reprocess_orphan(orphan)
         except Exception as e:
-            print("ORPHAN EXCEPTION:", e)
-            pass
+            logger.warning("Orphan reprocessing failed for parent %s: %s", parent_external_id, e)
 
 
 def _reprocess_orphan(orphan):
@@ -1148,7 +1159,7 @@ def _get_model_class(entity_type: str):
 
 
 @router.delete("/{entity_plural}/{external_id}", response={204: None})
-def delete_entity(request, entity_plural: str, external_id: str, studyKey: str = None):
+def delete_entity(request, entity_plural: str, external_id: str, studyKey: str | None = None):
     check_write_allowed(request)
     if not (request.user.is_staff or request.user.is_superuser):
         from users.models import SiteMembership
@@ -1203,7 +1214,7 @@ class TrashItemOut(ModelSchema):
 
 
 @router.get("/trash/items")
-def list_trash(request, studyKey: str = None):
+def list_trash(request, studyKey: str | None = None):
     if not (request.user.is_staff or request.user.is_superuser):
         from django.http import HttpResponseForbidden
 
@@ -1226,7 +1237,7 @@ def list_trash(request, studyKey: str = None):
 
 
 @router.post("/trash/{entity_type}/{external_id}/restore", response={200: dict})
-def restore_entity(request, entity_type: str, external_id: str, studyKey: str = None):
+def restore_entity(request, entity_type: str, external_id: str, studyKey: str | None = None):
     check_write_allowed(request)
     if not (request.user.is_staff or request.user.is_superuser):
         from django.http import HttpResponseForbidden
@@ -1261,26 +1272,29 @@ def restore_entity(request, entity_type: str, external_id: str, studyKey: str = 
     return 200, {"message": "Restored successfully"}
 
 
-
-import json
-
 class StripSyncMetadataMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
         response = self.get_response(request)
-        if hasattr(request, "auth_method") and getattr(request, "auth_method") == "SpecCompliant":
+        if hasattr(request, "auth_method") and request.auth_method == "SpecCompliant":
             # or we can check path: "/v1/edc/" in request.path
             if getattr(response, "streaming", False):
                 return response
-                
+
             content_type = response.headers.get("Content-Type", "")
             if "application/json" in content_type:
                 try:
                     data = json.loads(response.content)
-                    fields_to_remove = ["source_sequence", "offset_days", "sync_status", "last_sync_error", "clinical_timestamp"]
-                    
+                    fields_to_remove = [
+                        "source_sequence",
+                        "offset_days",
+                        "sync_status",
+                        "last_sync_error",
+                        "clinical_timestamp",
+                    ]
+
                     if isinstance(data, list):
                         for item in data:
                             if isinstance(item, dict):
@@ -1289,9 +1303,9 @@ class StripSyncMetadataMiddleware:
                     elif isinstance(data, dict):
                         for f in fields_to_remove:
                             data.pop(f, None)
-                            
+
                     response.content = json.dumps(data)
                     response["Content-Length"] = str(len(response.content))
-                except Exception:
+                except Exception:  # noqa: S110
                     pass
         return response

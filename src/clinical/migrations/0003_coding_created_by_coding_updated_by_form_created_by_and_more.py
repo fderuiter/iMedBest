@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0002_coding_clinical_timestamp_coding_offset_days_and_more"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),

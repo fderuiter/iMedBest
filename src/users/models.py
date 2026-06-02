@@ -1,35 +1,31 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from .oidc import decrypt, encrypt
+
 
 class User(AbstractUser):
     pass
 
 
 class SiteMembership(models.Model):
-    ROLE_CHOICES = (
-        ('site_investigator', 'Site Investigator'),
-    )
+    ROLE_CHOICES = (("site_investigator", "Site Investigator"),)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="site_memberships")
-    site = models.ForeignKey('clinical.Site', on_delete=models.CASCADE, related_name="memberships")
+    site = models.ForeignKey("clinical.Site", on_delete=models.CASCADE, related_name="memberships")
     role = models.CharField(max_length=50, choices=ROLE_CHOICES)
 
     class Meta:
-        unique_together = ('user', 'site', 'role')
+        unique_together = ("user", "site", "role")
 
 
 class StudyMembership(models.Model):
-    ROLE_CHOICES = (
-        ('clinical_auditor', 'Clinical Auditor'),
-    )
+    ROLE_CHOICES = (("clinical_auditor", "Clinical Auditor"),)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="study_memberships")
-    study = models.ForeignKey('clinical.Study', on_delete=models.CASCADE, related_name="memberships")
+    study = models.ForeignKey("clinical.Study", on_delete=models.CASCADE, related_name="memberships")
     role = models.CharField(max_length=50, choices=ROLE_CHOICES)
 
     class Meta:
-        unique_together = ('user', 'study', 'role')
-
-from .oidc import decrypt, encrypt
+        unique_together = ("user", "study", "role")
 
 
 class OIDCConfiguration(models.Model):

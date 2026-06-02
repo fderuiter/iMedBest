@@ -4,14 +4,21 @@ import io
 from django.http import HttpResponse, HttpResponseForbidden
 from ninja import Router
 
-from .models import AuditLog
 from clinical.api import JWTBearer
+
+from .models import AuditLog
 
 router = Router(auth=[JWTBearer()])
 
 
 @router.get("/export")
-def export_audit_log(request, date_from: str = None, date_to: str = None, user_id: str = None, study_id: str = None):
+def export_audit_log(
+    request,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    user_id: str | None = None,
+    study_id: str | None = None,
+):
     # Enforce Clinical Auditor or admin requirement
     from users.models import StudyMembership
 

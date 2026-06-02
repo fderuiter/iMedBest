@@ -290,7 +290,13 @@ class RecordRevision(ClinicalEntity):
 def create_record_revision(sender, instance, created, **kwargs):
     value_to_save = instance.value
     study = instance.get_study()
-    if study and getattr(study, "pii_masking_enabled", False) and hasattr(instance, "pii_fields") and "value" in instance.pii_fields and value_to_save:
+    if (
+        study
+        and getattr(study, "pii_masking_enabled", False)
+        and hasattr(instance, "pii_fields")
+        and "value" in instance.pii_fields
+        and value_to_save
+    ):
         value_to_save = "[REDACTED]"
 
     RecordRevision.objects.create(
@@ -402,10 +408,14 @@ class ValidationRule(models.Model):
 
 class ValidationResult(models.Model):
     rule = models.ForeignKey(ValidationRule, on_delete=models.CASCADE, related_name="results")
-    job = models.ForeignKey(SyncJob, on_delete=models.CASCADE, null=True, blank=True, related_name="validation_results")
+    job = models.ForeignKey(
+        SyncJob, on_delete=models.CASCADE, null=True, blank=True, related_name="validation_results"
+    )
     passed = models.BooleanField(default=True)
     error_message = models.TextField(blank=True, null=True)
-    query = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name="validation_results")
+    query = models.ForeignKey(
+        Query, on_delete=models.SET_NULL, null=True, blank=True, related_name="validation_results"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

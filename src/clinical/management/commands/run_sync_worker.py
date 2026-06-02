@@ -55,7 +55,7 @@ class Command(BaseCommand):
             if all(d.status == "COMPLETED" for d in deps):
                 task_to_run = task
                 break
-                
+
         if not task_to_run:
             # Check for failed dependencies
             failed_found = False
@@ -66,10 +66,8 @@ class Command(BaseCommand):
                     task.error_message = "Dependency failed"
                     task.save(update_fields=["status", "error_message"])
                     failed_found = True
-            
-            if failed_found:
-                return True
-            return False
+
+            return bool(failed_found)
 
         task = task_to_run
         updated = SyncTask.objects.filter(id=task.id, status="PENDING").update(status="PROCESSING")

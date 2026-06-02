@@ -62,8 +62,13 @@ class MultiVendorAdapter:
                 val = mapped_payload[field]
                 if field == "clinical_timestamp" and val and isinstance(val, str):
                     from django.utils.dateparse import parse_datetime
-                    val = parse_datetime(val)
-                defaults[field] = val
+                    parsed_val = parse_datetime(val)
+                    # Only set clinical_timestamp if parsing succeeded
+                    if parsed_val:
+                        defaults[field] = parsed_val
+                    # If parse_datetime returns None, skip assignment to avoid overwriting existing timestamp
+                else:
+                    defaults[field] = val
 
         # Resolve parents dynamically
         if parent_fields:

@@ -35,7 +35,9 @@ def test_event_generation_and_batching(mock_hierarchy, test_subscription):
     DeliveryAttempt.objects.all().delete()
 
     # Create Record
-    Record.objects.create(external_id="rec1", visit=visit, variable=variable, value="120/80", provider=variable.provider)
+    Record.objects.create(
+        external_id="rec1", visit=visit, variable=variable, value="120/80", provider=variable.provider
+    )
 
     # Check if event was generated
     events = OutboundEvent.objects.filter(event_type="Record", action="CREATE")
@@ -66,7 +68,13 @@ def test_background_worker(mock_hierarchy, test_subscription):
     # Mock the celery delay so we can control when it runs
     with patch("events.tasks.process_delivery_attempt.delay"):
         # Create Record
-        Record.objects.create(external_id="rec_worker", visit=visit, variable=variable, value="Worker test", provider=variable.provider)
+        Record.objects.create(
+            external_id="rec_worker",
+            visit=visit,
+            variable=variable,
+            value="Worker test",
+            provider=variable.provider,
+        )
 
         attempt = DeliveryAttempt.objects.filter(event__event_type="Record").last()
         assert attempt.status == "PENDING"
@@ -97,7 +105,13 @@ def test_subscription_filtering(mock_hierarchy):
     assert DeliveryAttempt.objects.count() == 0
 
     # Creating a Record
-    Record.objects.create(external_id="rec_filter", visit=visit, variable=variable, value="Filter test", provider=variable.provider)
+    Record.objects.create(
+        external_id="rec_filter",
+        visit=visit,
+        variable=variable,
+        value="Filter test",
+        provider=variable.provider,
+    )
 
     # NOW there should be a delivery attempt
     assert DeliveryAttempt.objects.count() == 1

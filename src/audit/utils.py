@@ -5,6 +5,7 @@ def extract_study_id(instance):
     if instance.__class__.__name__ == "Study":
         return getattr(instance, "id", None)
 
+    # Short-circuit: check for local study_id first
     if hasattr(instance, "study_id") and instance.study_id:
         return instance.study_id
 
@@ -22,16 +23,19 @@ def extract_study_id(instance):
         except Exception:  # noqa: S110
             pass
 
-    # Common fields in clinical hierarchy
+    # Common fields in clinical hierarchy - check FK ID before accessing related object
     for field in ["site", "subject", "form", "interval", "variable", "visit", "record"]:
         if hasattr(instance, field):
-            parent = getattr(instance, field)
-            if parent:
-                res = extract_study_id(parent)
-                if res:
-                    return res
+            # Check if the FK ID exists before materializing the parent
+            fk_id = getattr(instance, f"{field}_id", None)
+            if fk_id:
+                parent = getattr(instance, field)
+                if parent:
+                    res = extract_study_id(parent)
+                    if res:
+                        return res
 
-    # Generic fallback
+    # Generic fallback - check FK ID before accessing related object
     if hasattr(instance, "_meta"):
         for field in instance._meta.fields:
             if isinstance(field, models.ForeignKey) and field.name not in [
@@ -41,11 +45,14 @@ def extract_study_id(instance):
                 "provider",
             ]:
                 try:
-                    parent = getattr(instance, field.name)
-                    if parent and parent != instance:
-                        res = extract_study_id(parent)
-                        if res:
-                            return res
+                    # Check if the FK ID exists before materializing the parent
+                    fk_id = getattr(instance, f"{field.name}_id", None)
+                    if fk_id:
+                        parent = getattr(instance, field.name)
+                        if parent and parent != instance:
+                            res = extract_study_id(parent)
+                            if res:
+                                return res
                 except Exception:  # noqa: S110
                     pass
 

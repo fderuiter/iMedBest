@@ -79,7 +79,8 @@ def process_next_ready_tasks(self, job_id):
 
     pending_tasks = SyncTask.objects.filter(job=job, status="PENDING")
     if not pending_tasks.exists():
-        if not SyncTask.objects.filter(job=job, status="PROCESSING").exists():
+        # Check that no tasks are PROCESSING or FAILED before marking job as COMPLETED
+        if not SyncTask.objects.filter(job=job, status__in=["PROCESSING", "FAILED"]).exists():
             job.status = "COMPLETED"
             job.save(update_fields=["status"])
             run_validation_for_job.delay(job.id)
@@ -124,8 +125,8 @@ def process_single_task(self, task_id):
     task.save(update_fields=["status"])
 
     try:
-        from clinical.adapter import MultiVendorAdapter
         from audit.middleware import get_current_request
+        from clinical.adapter import MultiVendorAdapter
 
         request = get_current_request()
 

@@ -39,7 +39,7 @@ class JWTBearer(HttpBearer):
             from clinical.models import Provider
             try:
                 provider = Provider.objects.get(id=provider_id)
-            except Provider.DoesNotExist:
+            except (Provider.DoesNotExist, ValueError):
                 raise HttpError(400, "Invalid provider context") from None
 
             request.user = user
@@ -67,10 +67,10 @@ from .models import (
     Subject,
     SyncJob,
     SyncTask,
+    ValidationResult,
+    ValidationRule,
     Variable,
     Visit,
-    ValidationRule,
-    ValidationResult
 )
 from .schemas import SyncJobRequest, SyncJobResponse
 
@@ -96,7 +96,7 @@ class IMednetAPIAuth(APIKeyHeader):
             from clinical.models import Provider
             try:
                 provider = Provider.objects.get(id=provider_id)
-            except Provider.DoesNotExist:
+            except (Provider.DoesNotExist, ValueError):
                 from ninja.errors import HttpError
                 raise HttpError(400, "Invalid provider context") from None
 
@@ -600,7 +600,8 @@ def mask_pii_for_user(request, data):
 # --- Endpoints ---
 
 
-from .graph import topological_sort_entities, get_provider_dependencies
+from .graph import get_provider_dependencies, topological_sort_entities
+
 
 @router.post("/sync-jobs", response={200: SyncJobResponse, 400: dict})
 def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = None):
@@ -620,7 +621,17 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
 
     # Validate entity types
     valid_entity_types = {
-        "Study", "Site", "Form", "Interval", "Subject", "Variable", "Visit", "Record", "Coding", "Query", "RecordRevision"
+        "Study",
+        "Site",
+        "Form",
+        "Interval",
+        "Subject",
+        "Variable",
+        "Visit",
+        "Record",
+        "Coding",
+        "Query",
+        "RecordRevision",
     }
     for entity in sorted_entities:
         if entity.entity_type not in valid_entity_types:
@@ -629,7 +640,7 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
     try:
         with transaction.atomic():
             job = SyncJob.objects.create(user=request.user, provider=provider, status="PENDING")
-            
+
             # Create tasks, and map their temporary IDs to set dependencies
             task_objects = []
             entity_type_to_task = {}
@@ -1045,7 +1056,7 @@ def sync_query(request, payload: QuerySchemaIn):
         query.text = payload.text
         query.updated_by = request.user
         query.save()
-        
+
         # Bi-directional state sync for validation
         if query.status == "RESOLVED":
             from clinical.models import ValidationResult
@@ -1397,12 +1408,24 @@ class StripSyncMetadataMiddleware:
 
 @router.get("/validation/dashboard-summary")
 def get_validation_dashboard(request, studyKey: str | None = None):
-    qs = ValidationResult.objects.all()
+    # Filter by provider to prevent cross-tenant data leaks
+    provider = getattr(request, "provider", None)
+    if not provider:
+        from ninja.errors import HttpError
+        raise HttpError(400, "Missing provider context")
+
+    # Start with tenant-scoped queryset filtering by provider via job
+    qs = ValidationResult.objects.filter(job__provider=provider)
+
+    # Further filter by study if provided
     if studyKey:
-        # Actually validation results might be study-wide or across studies.
-        # But for this simple implementation, we just show all accessible.
-        pass
-        
+        # Filter validation results to those whose job's records/entities belong to the specified study
+        # Since ValidationResult -> job -> entities can span multiple models,
+        # we'll need to find a path. For now, filter by checking if any record in the job belongs to that study.
+        # A more robust approach would be to add a study field to SyncJob or ValidationResult.
+        # For this fix, we'll filter by checking records via the query relationship
+        qs = qs.filter(query__record__visit__subject__site__study__key=studyKey)
+
     total_checks = qs.count()
     if total_checks == 0:
         return {
@@ -1414,7 +1437,7 @@ def get_validation_dashboard(request, studyKey: str | None = None):
     passed_checks = qs.filter(passed=True).count()
     failed_checks = total_checks - passed_checks
     passed_percentage = (passed_checks / total_checks) * 100.0
-    
+
     return {
         "passed_percentage": round(passed_percentage, 2),
         "total_checks": total_checks,
@@ -1434,10 +1457,13 @@ class ValidationRuleSchemaOut(ModelSchema):
 
 @router.post("/validation-rules", response=ValidationRuleSchemaOut)
 def create_validation_rule(request, payload: ValidationRuleSchemaIn):
+    # Enforce write protection to prevent bypass via SpecCompliant auth
+    check_write_allowed(request)
+
     if not (request.user.is_staff or request.user.is_superuser):
         from django.core.exceptions import PermissionDenied
         raise PermissionDenied("Admin access required to create validation rules.")
-        
+
     rule = ValidationRule.objects.create(
         name=payload.name,
         description=payload.description,

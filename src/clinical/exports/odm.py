@@ -109,7 +109,8 @@ def create_odm_xml(study, job):
         tmp.write(f'  <ClinicalData StudyOID="{study_oid}" MetaDataVersionOID="v1.0">\n')
         subjects = Subject.objects.filter(site__study=study).prefetch_related("site").iterator(chunk_size=1000)
         for subject in subjects:
-            tmp.write(f'    <SubjectData SubjectKey="{escape_xml(subject.external_id)}">\n')
+            subj_key = "[REDACTED]" if mask_pii else escape_xml(subject.external_id)
+            tmp.write(f'    <SubjectData SubjectKey="{subj_key}">\n')
             tmp.write(f'      <SiteRef LocationOID="{escape_xml(subject.site.external_id)}"/>\n')
 
             records = (
@@ -155,8 +156,11 @@ def create_odm_xml(study, job):
                     tmp.write(f'          <ItemGroupData ItemGroupOID="{escape_xml(ig_oid)}">\n')
                     curr_ig = ig_oid
 
+                rec_val = escape_xml(rec.value)
+                if mask_pii and hasattr(rec, "pii_fields") and "value" in rec.pii_fields:
+                    rec_val = "[REDACTED]"
                 tmp.write(
-                    f'            <ItemData ItemOID="{escape_xml(rec.variable.external_id)}" Value="{escape_xml(rec.value)}">\n'  # noqa: E501
+                    f'            <ItemData ItemOID="{escape_xml(rec.variable.external_id)}" Value="{rec_val}">\n'  # noqa: E501
                 )
 
                 logs = AuditLog.objects.filter(model_name="Record", object_id=str(rec.external_id)).order_by(

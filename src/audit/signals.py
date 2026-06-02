@@ -17,6 +17,7 @@ def get_client_ip(request):
     return request.META.get("REMOTE_ADDR")
 
 
+
 def create_audit_log(action, instance, changes=None):
     model_name = instance.__class__.__name__
     if model_name in EXCLUDED_MODELS:
@@ -29,6 +30,17 @@ def create_audit_log(action, instance, changes=None):
 
     ip_address = get_client_ip(request) if request else None
     user_agent = request.META.get("HTTP_USER_AGENT") if request else None
+
+    # Redact tagged PII fields for masked studies
+    if changes and hasattr(instance, "pii_fields") and hasattr(instance, "get_study"):
+        study = instance.get_study()
+        if study and getattr(study, "pii_masking_enabled", False):
+            for field in instance.pii_fields:
+                if field in changes:
+                    if changes[field].get("old") is not None and changes[field]["old"] != "":
+                        changes[field]["old"] = "[REDACTED]"
+                    if changes[field].get("new") is not None and changes[field]["new"] != "":
+                        changes[field]["new"] = "[REDACTED]"
 
     create_audit_log_task.delay(
         action=action,

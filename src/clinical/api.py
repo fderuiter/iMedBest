@@ -542,6 +542,31 @@ def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_
         return 400, {"message": f"Sync failed. No data was saved. Error: {e!s}"}
 
 
+
+def mask_pii_for_user(request, data):
+    user = getattr(request, "user", None)
+    can_view = False
+    if user and user.is_authenticated:
+        if user.is_staff or user.is_superuser or user.has_perm("users.view_pii") or user.has_perm("clinical.view_pii"):
+            can_view = True
+        else:
+            # Also check roles if applicable
+            roles = getattr(request, "user_roles", [])
+            if "view_pii" in str(roles).lower():
+                can_view = True
+
+    if can_view:
+        return data
+
+    for obj in data:
+        study = obj.get_study()
+        if study and getattr(study, "pii_masking_enabled", False):
+            for field in getattr(obj, "pii_fields", []):
+                val = getattr(obj, field, None)
+                if val:
+                    setattr(obj, field, "[REDACTED]")
+    return data
+
 # --- Endpoints ---
 
 
@@ -630,7 +655,8 @@ def sync_study(request, payload: StudySchemaIn):
 
 @router.get("/studies", response=list[StudySchemaOut])
 def list_studies(request, studyKey: str | None = None):
-    return get_accessible_studies(request)
+    qs = get_accessible_studies(request)
+    return mask_pii_for_user(request, list(qs))
 
 
 # L1: Site
@@ -663,7 +689,8 @@ def sync_site(request, payload: SiteSchemaIn):
 
 @router.get("/sites", response=list[SiteSchemaOut])
 def list_sites(request, studyKey: str | None = None):
-    return get_accessible_sites(request).select_related("study")
+    qs = get_accessible_sites(request).select_related("study")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L2: Subject
@@ -696,7 +723,8 @@ def sync_subject(request, payload: SubjectSchemaIn):
 
 @router.get("/subjects", response=list[SubjectSchemaOut])
 def list_subjects(request, studyKey: str | None = None):
-    return get_accessible_subjects(request).select_related("site")
+    qs = get_accessible_subjects(request).select_related("site")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L2: Form
@@ -729,7 +757,8 @@ def sync_form(request, payload: FormSchemaIn):
 
 @router.get("/forms", response=list[FormSchemaOut])
 def list_forms(request, studyKey: str | None = None):
-    return Form.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
+    qs = Form.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L2: Interval
@@ -762,7 +791,8 @@ def sync_interval(request, payload: IntervalSchemaIn):
 
 @router.get("/intervals", response=list[IntervalSchemaOut])
 def list_intervals(request, studyKey: str | None = None):
-    return Interval.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
+    qs = Interval.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L3: Variable
@@ -797,7 +827,8 @@ def sync_variable(request, payload: VariableSchemaIn):
 
 @router.get("/variables", response=list[VariableSchemaOut])
 def list_variables(request, studyKey: str | None = None):
-    return Variable.objects.filter(form__study__in=get_accessible_studies(request)).select_related("form")
+    qs = Variable.objects.filter(form__study__in=get_accessible_studies(request)).select_related("form")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L3: Visit
@@ -840,7 +871,8 @@ def sync_visit(request, payload: VisitSchemaIn):
 
 @router.get("/visits", response=list[VisitSchemaOut])
 def list_visits(request, studyKey: str | None = None):
-    return Visit.objects.filter(subject__in=get_accessible_subjects(request)).select_related("subject", "interval")
+    qs = Visit.objects.filter(subject__in=get_accessible_subjects(request)).select_related("subject", "interval")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L4: Record
@@ -927,7 +959,8 @@ def sync_coding(request, payload: CodingSchemaIn):
 
 @router.get("/codings", response=list[CodingSchemaOut])
 def list_codings(request, studyKey: str | None = None):
-    return Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
+    qs = Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L4: Query
@@ -989,7 +1022,8 @@ def sync_query(request, payload: QuerySchemaIn):
 
 @router.get("/queries", response=list[QuerySchemaOut])
 def list_queries(request, studyKey: str | None = None):
-    return Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
+    qs = Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
+    return mask_pii_for_user(request, list(qs))
 
 
 @router.patch("/queries/{query_id}", response=QuerySchemaOut)
@@ -1011,7 +1045,7 @@ def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str |
 
     sync_query_upstream.delay(query.id)
 
-    return query
+    return mask_pii_for_user(request, [query])[0]
 
 
 # L4: RecordRevision

@@ -24,10 +24,7 @@ def inject_context_into_task(headers=None, **kwargs):
         ip = ""
         if hasattr(request, "META"):
             x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-            if x_forwarded_for:
-                ip = x_forwarded_for.split(",")[0]
-            else:
-                ip = request.META.get("REMOTE_ADDR", "")
+            ip = x_forwarded_for.split(",")[0] if x_forwarded_for else request.META.get("REMOTE_ADDR", "")
 
         headers["__ip_address"] = ip
         headers["__user_agent"] = request.META.get("HTTP_USER_AGENT", "") if hasattr(request, "META") else ""

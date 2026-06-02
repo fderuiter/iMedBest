@@ -72,6 +72,11 @@ def test_reactive_orphan_buffering(client):
     process_all_jobs()
     assert rec_resp.status_code == 200
     assert BufferedOrphan.objects.count() == 1
+    
+    # Task should be in BUFFERED state, not COMPLETED
+    rec_job_id = rec_resp.json()["jobId"]
+    rec_task = SyncJob.objects.get(id=rec_job_id).tasks.first()
+    assert rec_task.status == "BUFFERED"
 
     # Sync VISIT before SUBJECT
     # Subject doesn't exist, so this will orphan the visit
@@ -98,6 +103,16 @@ def test_reactive_orphan_buffering(client):
 
     # Check if all orphans are processed
     assert BufferedOrphan.objects.count() == 0
+
+    # Task should now be COMPLETED
+    rec_task.refresh_from_db()
+    assert rec_task.status == "COMPLETED"
+
+    # Verify AuditLog was created for the transition
+    from audit.models import AuditLog
+    log = AuditLog.objects.filter(model_name="SyncTask", object_id=str(rec_task.id), action="UPDATE").first()
+    assert log is not None
+    assert log.changes["status"] == ["BUFFERED", "COMPLETED"]
 
     # Check if the record is successfully created in DB
     record = Record.objects.filter(external_id="rec-orphan").first()

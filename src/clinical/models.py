@@ -324,6 +324,7 @@ class SyncTask(models.Model):
         choices=[
             ("PENDING", "Pending"),
             ("PROCESSING", "Processing"),
+            ("BUFFERED", "Buffered"),
             ("COMPLETED", "Completed"),
             ("FAILED", "Failed"),
         ],

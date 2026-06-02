@@ -26,7 +26,7 @@ def process_all_jobs():
             break
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_multi_level_data_import(client):
     headers = get_auth_headers("study-1")
     # Level 1
@@ -37,7 +37,7 @@ def test_multi_level_data_import(client):
         **headers,
     )
     print(study_resp.json())  # noqa: T201
-    assert study_resp.status_code == 200
+    assert study_resp.status_code == 202
 
     site_resp = client.post(
         "/api/clinical/sites",
@@ -45,7 +45,7 @@ def test_multi_level_data_import(client):
         content_type="application/json",
         **headers,
     )
-    assert site_resp.status_code == 200
+    assert site_resp.status_code == 202
 
     # Level 2
     subject_resp = client.post(
@@ -54,7 +54,7 @@ def test_multi_level_data_import(client):
         content_type="application/json",
         **headers,
     )
-    assert subject_resp.status_code == 200
+    assert subject_resp.status_code == 202
 
     form_resp = client.post(
         "/api/clinical/forms",
@@ -62,7 +62,7 @@ def test_multi_level_data_import(client):
         content_type="application/json",
         **headers,
     )
-    assert form_resp.status_code == 200
+    assert form_resp.status_code == 202
 
     int_resp = client.post(
         "/api/clinical/intervals",
@@ -70,7 +70,7 @@ def test_multi_level_data_import(client):
         content_type="application/json",
         **headers,
     )
-    assert int_resp.status_code == 200
+    assert int_resp.status_code == 202
 
     # Level 3
     var_resp = client.post(
@@ -79,7 +79,7 @@ def test_multi_level_data_import(client):
         content_type="application/json",
         **headers,
     )
-    assert var_resp.status_code == 200
+    assert var_resp.status_code == 202
 
     visit_resp = client.post(
         "/api/clinical/visits",
@@ -87,7 +87,7 @@ def test_multi_level_data_import(client):
         content_type="application/json",
         **headers,
     )
-    assert visit_resp.status_code == 200
+    assert visit_resp.status_code == 202
 
     # Level 4
     record_resp = client.post(
@@ -96,7 +96,7 @@ def test_multi_level_data_import(client):
         content_type="application/json",
         **headers,
     )
-    assert record_resp.status_code == 200
+    assert record_resp.status_code == 202
 
     process_all_jobs()
 
@@ -227,7 +227,7 @@ def test_longitudinal_reconstruction(client):
     assert values == ["85", "90"]
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_job_endpoint(client):
     headers = get_auth_headers("study-async")
     from clinical.models import SyncJob
@@ -248,7 +248,7 @@ def test_sync_job_endpoint(client):
     }
 
     resp = client.post("/api/clinical/sync-jobs", data=payload, content_type="application/json", **headers)
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     data = resp.json()
     assert "jobId" in data
 
@@ -263,19 +263,11 @@ def test_sync_job_endpoint(client):
     assert job.tasks.count() == 2
 
 
-@pytest.mark.django_db()
-def test_sync_job_atomic_failure(client):
+@pytest.mark.django_db
+def test_sync_job_granular_failure(client):
     headers = get_auth_headers("study-atomic")
 
-    # We will send a valid study and an invalid site (e.g. unknown external id for study)
-    # wait, MultiVendorAdapter.sync_entity might just buffer it as an orphan if the parent is missing.
-    # What causes an exception in sync_entity?
-    # Providing an invalid schema field, e.g. a date string that is totally
-    # invalid causing ValueError, or missing a required field that the DB enforces.
-    # Let's see: Study requires 'name'. If we omit name... well, name has max_length.
-    # Better: trigger a LookupError by providing
-    # an unknown entity_type!
-
+    # We will send a valid study and an invalid entity type
     payload = {
         "entities": [
             {
@@ -288,9 +280,15 @@ def test_sync_job_atomic_failure(client):
     }
 
     resp = client.post("/api/clinical/sync-jobs", data=payload, content_type="application/json", **headers)
-    assert resp.status_code == 400
+    assert resp.status_code == 202
 
-    # Verify rollback: Study should NOT be created
+    process_all_jobs()
+
+    # Verify granular commit: Study should BE created, even though UnknownEntity failed
     from clinical.models import Study
+    assert Study.objects.filter(external_id="study-atomic").exists()
 
-    assert not Study.objects.filter(external_id="study-atomic").exists()
+    from clinical.models import SyncJob
+    job_id = resp.json()["jobId"]
+    job = SyncJob.objects.get(id=job_id)
+    assert job.status == "FAILED"  # Because one task failed

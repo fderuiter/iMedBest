@@ -14,6 +14,9 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         logger.info("Starting sync queue worker...")
 
+        # Reset any interrupted tasks back to PENDING so they can be resumed
+        SyncTask.objects.filter(status="PROCESSING").update(status="PENDING")
+
         while True:
             try:
                 jobs_to_process = SyncJob.objects.filter(status__in=["PENDING", "PROCESSING"]).order_by("created_at")
@@ -33,7 +36,7 @@ class Command(BaseCommand):
     def process_job(self, job):
         if job.status == "PENDING":
             job.status = "PROCESSING"
-            job.save(update_fields=["status"])
+            job.save(update_fields=["status", "updated_at"])
 
         active_tasks = job.tasks.exclude(status__in=["COMPLETED", "FAILED"])
         if not active_tasks.exists():
@@ -41,7 +44,7 @@ class Command(BaseCommand):
                 job.status = "FAILED"
             else:
                 job.status = "COMPLETED"
-            job.save(update_fields=["status"])
+            job.save(update_fields=["status", "updated_at"])
             return True
 
         min_level = active_tasks.order_by("hierarchy_level").first().hierarchy_level
@@ -75,7 +78,7 @@ class Command(BaseCommand):
         try:
             self.execute_task(task)
             task.status = "COMPLETED"
-            task.save(update_fields=["status"])
+            task.save(update_fields=["status", "updated_at"])
         except Exception as e:
             logger.exception(f"Error processing task {task.id}: {e}")
             task.error_message = str(e)
@@ -84,11 +87,13 @@ class Command(BaseCommand):
                 task.status = "FAILED"
             else:
                 task.status = "PENDING"
-            task.save(update_fields=["status", "error_message", "retry_count"])
+            task.save(update_fields=["status", "error_message", "retry_count", "updated_at"])
 
         return True
 
     def execute_task(self, task):
+        from django.db import transaction
+
         from clinical.adapter import MultiVendorAdapter
 
         class MockRequest:
@@ -103,4 +108,5 @@ class Command(BaseCommand):
         entity_type = task.entity_type
 
         adapter = MultiVendorAdapter(task.job.provider)
-        adapter.sync_entity(request, entity_type, payload)
+        with transaction.atomic():
+            adapter.sync_entity(request, entity_type, payload)

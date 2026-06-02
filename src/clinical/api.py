@@ -518,34 +518,35 @@ def _queue_single_task(request, hierarchy_level: int, entity_type: str, payload_
 
     from django.db import transaction
 
-    from clinical.adapter import MultiVendorAdapter
-
     payload_dict = json.loads(payload_obj.model_dump_json(by_alias=False))
     provider = getattr(request, "provider", None)
-    adapter = MultiVendorAdapter(provider)
 
     try:
         with transaction.atomic():
-            job = SyncJob.objects.create(user=request.user, provider=provider, status="COMPLETED")
+            job = SyncJob.objects.create(user=request.user, provider=provider, status="PENDING")
             SyncTask.objects.create(
                 job=job,
                 hierarchy_level=hierarchy_level,
                 entity_type=entity_type,
                 payload=payload_dict,
-                status="COMPLETED",
+                status="PENDING",
             )
-            adapter.sync_entity(request, entity_type, payload_dict)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
-        return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync completed", status_url=status_url)
+        return 202, SyncJobResponse(
+            job_id=job.id,
+            status=job.status,
+            message="Sync job accepted and pending processing",
+            status_url=status_url,
+        )
     except Exception as e:
-        return 400, {"message": f"Sync failed. No data was saved. Error: {e!s}"}
+        return 400, {"message": f"Failed to queue sync job. Error: {e!s}"}
 
 
 # --- Endpoints ---
 
 
-@router.post("/sync-jobs", response={200: SyncJobResponse, 400: dict})
+@router.post("/sync-jobs", response={202: SyncJobResponse, 400: dict})
 def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = None):
     check_write_allowed(request)
     if not (request.user.is_staff or request.user.is_superuser):
@@ -556,10 +557,7 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
 
     from django.db import transaction
 
-    from clinical.adapter import MultiVendorAdapter
-
     provider = getattr(request, "provider", None)
-    adapter = MultiVendorAdapter(provider)
 
     entity_order = {
         "Study": 1,
@@ -579,7 +577,7 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
 
     try:
         with transaction.atomic():
-            job = SyncJob.objects.create(user=request.user, provider=provider, status="COMPLETED")
+            job = SyncJob.objects.create(user=request.user, provider=provider, status="PENDING")
             task_objects = []
             for entity in sorted_entities:
                 task_objects.append(
@@ -588,18 +586,17 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
                         hierarchy_level=entity.hierarchy_level,
                         entity_type=entity.entity_type,
                         payload=entity.payload,
-                        status="COMPLETED",
+                        status="PENDING",
                     )
                 )
-                adapter.sync_entity(request, entity.entity_type, entity.payload)
             SyncTask.objects.bulk_create(task_objects)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
-        return 200, SyncJobResponse(
-            job_id=job.id, status=job.status, message="Sync completed synchronously", status_url=status_url
+        return 202, SyncJobResponse(
+            job_id=job.id, status=job.status, message="Sync job accepted and pending processing", status_url=status_url
         )
     except Exception as e:
-        return 400, {"message": f"Sync failed. No data was saved. Error: {e!s}"}
+        return 400, {"message": f"Failed to queue sync job. Error: {e!s}"}
 
 
 @router.get("/sync-jobs/{job_id}", response=JobStatusSchemaOut)
@@ -608,7 +605,7 @@ def get_sync_job(request, job_id: str, studyKey: str | None = None):
 
 
 # L1: Study
-@router.post("/studies", response={200: SyncJobResponse, 400: dict})
+@router.post("/studies", response={202: SyncJobResponse, 400: dict})
 def api_sync_study(request, payload: StudySchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 1, "Study", payload)
@@ -634,7 +631,7 @@ def list_studies(request, studyKey: str | None = None):
 
 
 # L1: Site
-@router.post("/sites", response={200: SyncJobResponse, 400: dict})
+@router.post("/sites", response={202: SyncJobResponse, 400: dict})
 def api_sync_site(request, payload: SiteSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 1, "Site", payload)
@@ -667,7 +664,7 @@ def list_sites(request, studyKey: str | None = None):
 
 
 # L2: Subject
-@router.post("/subjects", response={200: SyncJobResponse, 400: dict})
+@router.post("/subjects", response={202: SyncJobResponse, 400: dict})
 def api_sync_subject(request, payload: SubjectSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 2, "Subject", payload)
@@ -700,7 +697,7 @@ def list_subjects(request, studyKey: str | None = None):
 
 
 # L2: Form
-@router.post("/forms", response={200: SyncJobResponse, 400: dict})
+@router.post("/forms", response={202: SyncJobResponse, 400: dict})
 def api_sync_form(request, payload: FormSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 2, "Form", payload)
@@ -733,7 +730,7 @@ def list_forms(request, studyKey: str | None = None):
 
 
 # L2: Interval
-@router.post("/intervals", response={200: SyncJobResponse, 400: dict})
+@router.post("/intervals", response={202: SyncJobResponse, 400: dict})
 def api_sync_interval(request, payload: IntervalSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 2, "Interval", payload)
@@ -766,7 +763,7 @@ def list_intervals(request, studyKey: str | None = None):
 
 
 # L3: Variable
-@router.post("/variables", response={200: SyncJobResponse, 400: dict})
+@router.post("/variables", response={202: SyncJobResponse, 400: dict})
 def api_sync_variable(request, payload: VariableSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 3, "Variable", payload)
@@ -801,7 +798,7 @@ def list_variables(request, studyKey: str | None = None):
 
 
 # L3: Visit
-@router.post("/visits", response={200: SyncJobResponse, 400: dict})
+@router.post("/visits", response={202: SyncJobResponse, 400: dict})
 def api_sync_visit(request, payload: VisitSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 3, "Visit", payload)
@@ -844,7 +841,7 @@ def list_visits(request, studyKey: str | None = None):
 
 
 # L4: Record
-@router.post("/records", response={200: SyncJobResponse, 400: dict})
+@router.post("/records", response={202: SyncJobResponse, 400: dict})
 def api_sync_record(request, payload: RecordSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 4, "Record", payload)
@@ -894,7 +891,7 @@ def list_records(request, studyKey: str | None = None):
 
 
 # L4: Coding
-@router.post("/codings", response={200: SyncJobResponse, 400: dict})
+@router.post("/codings", response={202: SyncJobResponse, 400: dict})
 def api_sync_coding(request, payload: CodingSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 4, "Coding", payload)
@@ -931,7 +928,7 @@ def list_codings(request, studyKey: str | None = None):
 
 
 # L4: Query
-@router.post("/queries", response={200: SyncJobResponse, 400: dict})
+@router.post("/queries", response={202: SyncJobResponse, 400: dict})
 def api_sync_query(request, payload: QuerySchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 4, "Query", payload)
@@ -1015,7 +1012,7 @@ def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str |
 
 
 # L4: RecordRevision
-@router.post("/revisions", response={200: SyncJobResponse, 400: dict})
+@router.post("/revisions", response={202: SyncJobResponse, 400: dict})
 def api_sync_revision(request, payload: RecordRevisionSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, 4, "RecordRevision", payload)

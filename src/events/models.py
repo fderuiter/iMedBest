@@ -1,5 +1,6 @@
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -11,6 +12,13 @@ class Subscription(models.Model):
     )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    study = models.ForeignKey("clinical.Study", on_delete=models.CASCADE, null=True, blank=True)
+    site = models.ForeignKey("clinical.Site", on_delete=models.CASCADE, null=True, blank=True)
+
+    def clean(self):
+        super().clean()
+        if not self.study_id and not self.site_id:
+            raise ValidationError("A subscription must be scoped to either a Study or a Site.")
 
     def __str__(self):
         return f"{self.name} - {self.endpoint_url}"
@@ -33,6 +41,7 @@ class OutboundEvent(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     error_message = models.TextField(blank=True, null=True)
     retry_count = models.IntegerField(default=0)
+    record_revision = models.ForeignKey("clinical.RecordRevision", on_delete=models.PROTECT, null=True, blank=True)
 
     # We might want to link it to specific subscriptions, or we just fan-out on generation.
     # To support independent subscriptions (Req 6), maybe we store DeliveryAttempt per subscription.
@@ -50,4 +59,4 @@ class DeliveryAttempt(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
     timestamp = models.DateTimeField(auto_now_add=True)
     error_message = models.TextField(blank=True, null=True)
-    retry_count = models.IntegerField(default=0)
+    response_code = models.IntegerField(null=True, blank=True)

@@ -109,4 +109,8 @@ class Command(BaseCommand):
         entity_type = task.entity_type
 
         adapter = MultiVendorAdapter(task.job.provider)
-        adapter.sync_entity(request, entity_type, payload)
+        result = adapter.sync_entity(request, entity_type, payload)
+        
+        if result and not isinstance(result, tuple):
+            result.is_validated = True
+            result.save(update_fields=["is_validated", "updated_at"])

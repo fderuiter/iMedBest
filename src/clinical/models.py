@@ -69,6 +69,8 @@ class ClinicalEntity(models.Model):
 
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    
+    is_validated = models.BooleanField(default=False)
 
     objects = ActiveManager()
     all_objects = AllManager()

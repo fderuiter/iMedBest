@@ -533,7 +533,10 @@ def _queue_single_task(request, entity_type: str, payload_obj) -> tuple[int, Any
                 payload=payload_dict,
                 status="COMPLETED",
             )
-            adapter.sync_entity(request, entity_type, payload_dict)
+            result = adapter.sync_entity(request, entity_type, payload_dict)
+            if result and not isinstance(result, tuple):
+                result.is_validated = True
+                result.save(update_fields=["is_validated", "updated_at"])
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync completed", status_url=status_url)
@@ -1139,7 +1142,11 @@ def _reprocess_orphan(orphan):
     req = type("DummyRequest", (object,), {"user": orphan.user, "provider": orphan.provider, "user_roles": ["cdisc"]})()
 
     adapter = MultiVendorAdapter(orphan.provider)
-    adapter.sync_entity(req, orphan.entity_type, orphan.payload)
+    result = adapter.sync_entity(req, orphan.entity_type, orphan.payload)
+
+    if result and not isinstance(result, tuple):
+        result.is_validated = True
+        result.save(update_fields=["is_validated", "updated_at"])
 
     orphan.delete()
 

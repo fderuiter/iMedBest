@@ -162,28 +162,33 @@ def process_single_task(self, task_id, user_id):
         payload = task.payload
         entity_type = task.entity_type
 
+        result = None
         if entity_type == "Study":
-            sync_study(request, StudySchemaIn(**payload))
+            result = sync_study(request, StudySchemaIn(**payload))
         elif entity_type == "Site":
-            sync_site(request, SiteSchemaIn(**payload))
+            result = sync_site(request, SiteSchemaIn(**payload))
         elif entity_type == "Subject":
-            sync_subject(request, SubjectSchemaIn(**payload))
+            result = sync_subject(request, SubjectSchemaIn(**payload))
         elif entity_type == "Form":
-            sync_form(request, FormSchemaIn(**payload))
+            result = sync_form(request, FormSchemaIn(**payload))
         elif entity_type == "Interval":
-            sync_interval(request, IntervalSchemaIn(**payload))
+            result = sync_interval(request, IntervalSchemaIn(**payload))
         elif entity_type == "Variable":
-            sync_variable(request, VariableSchemaIn(**payload))
+            result = sync_variable(request, VariableSchemaIn(**payload))
         elif entity_type == "Visit":
-            sync_visit(request, VisitSchemaIn(**payload))
+            result = sync_visit(request, VisitSchemaIn(**payload))
         elif entity_type == "Record":
-            sync_record(request, RecordSchemaIn(**payload))
+            result = sync_record(request, RecordSchemaIn(**payload))
         elif entity_type == "Coding":
-            sync_coding(request, CodingSchemaIn(**payload))
+            result = sync_coding(request, CodingSchemaIn(**payload))
         elif entity_type == "Query":
-            sync_query(request, QuerySchemaIn(**payload))
+            result = sync_query(request, QuerySchemaIn(**payload))
         elif entity_type == "RecordRevision":
-            sync_revision(request, RecordRevisionSchemaIn(**payload))
+            result = sync_revision(request, RecordRevisionSchemaIn(**payload))
+
+        if result and not isinstance(result, tuple):
+            result.is_validated = True
+            result.save(update_fields=["is_validated", "updated_at"])
 
         task.status = "COMPLETED"
         task.save(update_fields=["status"])

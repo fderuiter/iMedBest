@@ -21,6 +21,23 @@ def escape_xml(value):
 
 
 def create_odm_xml(study, job):
+    from clinical.models import BufferedOrphan
+
+    # Pre-flight hard gate
+    if study.provider_id:
+        orphans_qs = BufferedOrphan.objects.filter(provider_id=study.provider_id)
+        if orphans_qs.exists():
+            # Get up to 5 orphans to show in error
+            orphan_details = [f"{o.entity_type} waiting for {o.missing_parent_id}" for o in orphans_qs[:5]]
+            details_str = ", ".join(orphan_details)
+            raise ValueError(f"Export blocked: Buffered orphan records exist for provider ({details_str}). Please resolve pending synchronizations before export.")
+
+    unvalidated_qs = Record.objects.filter(visit__subject__site__study=study, is_validated=False)
+    if unvalidated_qs.exists():
+        unvalidated_details = [f"Record {r.external_id}" for r in unvalidated_qs[:5]]
+        details_str = ", ".join(unvalidated_details)
+        raise ValueError(f"Export blocked: Unvalidated records found in the requested scope ({details_str}). Ensure validation DAG has completed.")
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xml", mode="w", encoding="utf-8") as tmp:
         tmp.write('<?xml version="1.0" encoding="UTF-8"?>\n')
         tmp.write(

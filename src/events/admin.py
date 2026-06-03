@@ -19,19 +19,12 @@ class OutboundEventAdmin(admin.ModelAdmin):
 
 @admin.register(DeliveryAttempt)
 class DeliveryAttemptAdmin(admin.ModelAdmin):
-    list_display = ("event", "subscription", "status", "timestamp", "retry_count")
+    list_display = ("event", "subscription", "status", "timestamp")
     list_filter = ("status", "subscription")
     search_fields = ("event__event_id",)
-    actions = ["retry_failed"]
 
-    def retry_failed(self, request, queryset):
-        failed_attempts = list(queryset.filter(status="FAILED"))
-        for attempt in failed_attempts:
-            attempt.status = "PENDING"
-            attempt.error_message = None
-            attempt.save(update_fields=["status", "error_message"])
-            process_delivery_attempt.delay(attempt.id)
+    def has_change_permission(self, request, obj=None):
+        return False
 
-        self.message_user(request, f"Marked {len(failed_attempts)} failed attempts as PENDING and queued for retry.")
-
-    retry_failed.short_description = "Retry selected failed deliveries"
+    def has_delete_permission(self, request, obj=None):
+        return False

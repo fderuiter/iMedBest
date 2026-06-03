@@ -21,6 +21,8 @@ def process_delivery_attempt(self, attempt_id):
     attempt.status = "PROCESSING"
     attempt.save(update_fields=["status"])
 
+    response_code = None
+
     try:
         payload = {
             "event_id": str(attempt.event.event_id),
@@ -31,24 +33,32 @@ def process_delivery_attempt(self, attempt_id):
 
         # Simple mock if endpoint is localhost/mock
         if "mock" in attempt.subscription.endpoint_url:
-            pass  # success
+            response_code = 200
         else:
             response = requests.post(attempt.subscription.endpoint_url, json=payload, timeout=5)
+            response_code = response.status_code
             response.raise_for_status()
 
         attempt.status = "DELIVERED"
         attempt.error_message = ""
-        attempt.save(update_fields=["status", "error_message"])
+        attempt.response_code = response_code
+        attempt.save(update_fields=["status", "error_message", "response_code"])
     except Exception as e:
-        attempt.retry_count += 1
+        if isinstance(e, requests.RequestException) and getattr(e, "response", None) is not None:
+            response_code = e.response.status_code
+
+        attempt.status = "FAILED"
+        attempt.error_message = str(e)
+        attempt.response_code = response_code
+        attempt.save(update_fields=["status", "error_message", "response_code"])
 
         try:
-            # We want to retry. Don't mark as FAILED until max retries are reached.
-            attempt.status = "PENDING"
-            attempt.error_message = str(e)
-            attempt.save(update_fields=["status", "error_message", "retry_count"])
-            raise self.retry(exc=e, countdown=2**self.request.retries)
+            if self.request.retries < self.max_retries:
+                new_attempt = DeliveryAttempt.objects.create(
+                    event=attempt.event,
+                    subscription=attempt.subscription,
+                    status="PENDING"
+                )
+                raise self.retry(exc=e, countdown=2**self.request.retries, args=[new_attempt.id])
         except self.MaxRetriesExceededError:
-            attempt.status = "FAILED"
-            attempt.save(update_fields=["status"])
-            # Don't re-raise, we want the task to succeed in acknowledging the final failure.
+            pass

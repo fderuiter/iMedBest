@@ -1,6 +1,7 @@
 from django.apps import apps
+from django.utils.dateparse import parse_datetime
 
-from .models import BufferedOrphan
+from clinical import models, services
 
 
 class MultiVendorAdapter:
@@ -55,8 +56,6 @@ class MultiVendorAdapter:
         # Parse datetime if needed
         clinical_timestamp = mapped_payload.get("clinical_timestamp")
         if clinical_timestamp and isinstance(clinical_timestamp, str):
-            from django.utils.dateparse import parse_datetime
-
             clinical_timestamp = parse_datetime(clinical_timestamp)
 
         defaults = {
@@ -94,7 +93,7 @@ class MultiVendorAdapter:
                     parent_obj = parent_qs.first()
 
                     if not parent_obj:
-                        BufferedOrphan.objects.create(
+                        models.BufferedOrphan.objects.create(
                             entity_type=raw_type,
                             missing_parent_id=parent_ext_id,
                             payload=payload,
@@ -112,8 +111,6 @@ class MultiVendorAdapter:
             create_defaults={**defaults, "created_by": request.user},
         )
 
-        from .api import check_and_process_orphans
-
-        check_and_process_orphans(obj.external_id)
+        services.check_and_process_orphans(obj.external_id)
 
         return obj

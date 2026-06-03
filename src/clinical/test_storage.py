@@ -1,3 +1,4 @@
+import gc
 import os
 
 import pytest
@@ -44,8 +45,6 @@ def test_storage_adapter_rollback():
     # Staged file should also be cleaned up (RollbackCleanup GC)
     staging_dir = os.path.join(str(adapter.base_dir), ".staging")
     if os.path.exists(staging_dir):
-        import gc
-
         gc.collect()
         # Verify it does not leave orphan stages
         assert len(os.listdir(staging_dir)) == 0

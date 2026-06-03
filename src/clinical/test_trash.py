@@ -1,9 +1,10 @@
 import pytest
 from django.contrib.auth import get_user_model
 
+from clinical.management.commands.run_sync_worker import Command as WorkerCommand
 from users.jwt import create_jwt_token
 
-from .models import Site, Study, Subject
+from .models import Site, Study, Subject, SyncJob
 
 
 def get_auth_headers():
@@ -13,7 +14,7 @@ def get_auth_headers():
     return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": "test-study"}
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_soft_delete_and_restore(client):
     headers = get_auth_headers()
     client.post(
@@ -34,10 +35,6 @@ def test_soft_delete_and_restore(client):
         content_type="application/json",
         **headers,
     )
-
-    from clinical.management.commands.run_sync_worker import Command as WorkerCommand
-
-    from .models import SyncJob
 
     worker = WorkerCommand()
     for job in SyncJob.objects.all():

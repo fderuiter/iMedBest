@@ -1,3 +1,29 @@
+import os
+from django.core.management import call_command
+from django.db import transaction
+
+from audit.models import AuditLog
+from clinical.models import Query, ExportJob, Study
+from clinical.exports.odm import create_odm_xml
+from clinical.storage import get_storage_adapter
+from events.models import OutboundEvent
+from users.models import User
+
+import clinical.api
+from clinical.services import (
+    sync_coding,
+    sync_form,
+    sync_interval,
+    sync_query,
+    sync_record,
+    sync_revision,
+    sync_site,
+    sync_study,
+    sync_subject,
+    sync_variable,
+    sync_visit,
+)
+
 import logging
 
 from celery import shared_task
@@ -103,7 +129,7 @@ def process_next_ready_tasks(self, job_id, user_id):
                 task.error_message = "Dependency failed"
                 task.save(update_fields=["status", "error_message"])
                 failed_dependencies = True
-        
+
         if failed_dependencies:
             # Trigger again to process downstream failures or finish job
             process_next_ready_tasks.apply_async((job_id, user_id), countdown=1)
@@ -122,33 +148,6 @@ def process_single_task(self, task_id, user_id):
     task.save(update_fields=["status"])
 
     try:
-        from users.models import User
-
-        from .api import (
-            CodingSchemaIn,
-            FormSchemaIn,
-            IntervalSchemaIn,
-            QuerySchemaIn,
-            RecordRevisionSchemaIn,
-            RecordSchemaIn,
-            SiteSchemaIn,
-            StudySchemaIn,
-            SubjectSchemaIn,
-            VariableSchemaIn,
-            VisitSchemaIn,
-            sync_coding,
-            sync_form,
-            sync_interval,
-            sync_query,
-            sync_record,
-            sync_revision,
-            sync_site,
-            sync_study,
-            sync_subject,
-            sync_variable,
-            sync_visit,
-        )
-
         user = User.objects.get(id=user_id)
 
         # Mock request object
@@ -163,27 +162,27 @@ def process_single_task(self, task_id, user_id):
         entity_type = task.entity_type
 
         if entity_type == "Study":
-            sync_study(request, StudySchemaIn(**payload))
+            sync_study(request, clinical.api.StudySchemaIn(**payload))
         elif entity_type == "Site":
-            sync_site(request, SiteSchemaIn(**payload))
+            sync_site(request, clinical.api.SiteSchemaIn(**payload))
         elif entity_type == "Subject":
-            sync_subject(request, SubjectSchemaIn(**payload))
+            sync_subject(request, clinical.api.SubjectSchemaIn(**payload))
         elif entity_type == "Form":
-            sync_form(request, FormSchemaIn(**payload))
+            sync_form(request, clinical.api.FormSchemaIn(**payload))
         elif entity_type == "Interval":
-            sync_interval(request, IntervalSchemaIn(**payload))
+            sync_interval(request, clinical.api.IntervalSchemaIn(**payload))
         elif entity_type == "Variable":
-            sync_variable(request, VariableSchemaIn(**payload))
+            sync_variable(request, clinical.api.VariableSchemaIn(**payload))
         elif entity_type == "Visit":
-            sync_visit(request, VisitSchemaIn(**payload))
+            sync_visit(request, clinical.api.VisitSchemaIn(**payload))
         elif entity_type == "Record":
-            sync_record(request, RecordSchemaIn(**payload))
+            sync_record(request, clinical.api.RecordSchemaIn(**payload))
         elif entity_type == "Coding":
-            sync_coding(request, CodingSchemaIn(**payload))
+            sync_coding(request, clinical.api.CodingSchemaIn(**payload))
         elif entity_type == "Query":
-            sync_query(request, QuerySchemaIn(**payload))
+            sync_query(request, clinical.api.QuerySchemaIn(**payload))
         elif entity_type == "RecordRevision":
-            sync_revision(request, RecordRevisionSchemaIn(**payload))
+            sync_revision(request, clinical.api.RecordRevisionSchemaIn(**payload))
 
         task.status = "COMPLETED"
         task.save(update_fields=["status"])
@@ -220,62 +219,12 @@ def check_level_completion(job_id, user_id):
 
 @shared_task
 def purge_trash_task(days=30):
-    from django.core.management import call_command
 
     call_command("purge_trash", days=days)
 
 
-@shared_task
-def reconstruct_subject_timeline(subject_id):
-    from clinical.models import Coding, Query, Record, RecordRevision, Subject, Visit
-
-    try:
-        subject = Subject.objects.get(id=subject_id)
-    except Subject.DoesNotExist:
-        return
-
-    baseline = subject.baseline_date
-    if not baseline:
-        return
-
-    # Update offset_days for all descendant entities
-    models_to_update = [Visit, Record, Coding, Query, RecordRevision]
-    for model in models_to_update:
-        records_to_update = []
-        if model == Visit:
-            qs = model.objects.filter(subject=subject)
-        elif model in [Record]:
-            qs = model.objects.filter(visit__subject=subject)
-        elif model in [Coding, Query, RecordRevision]:
-            qs = model.objects.filter(record__visit__subject=subject)
-        else:
-            continue
-
-        for obj in qs.filter(clinical_timestamp__isnull=False):
-            new_offset = (obj.clinical_timestamp.date() - baseline.date()).days
-            if obj.offset_days != new_offset:
-                obj.offset_days = new_offset
-                records_to_update.append(obj)
-
-        if records_to_update:
-            model.objects.bulk_update(records_to_update, ["offset_days"])
-
-    # Update source_sequence if not set for Records
-    records = Record.objects.filter(visit__subject=subject).order_by("clinical_timestamp", "created_at")
-    records_to_update_seq = []
-    for seq, rec in enumerate(records, start=1):
-        if rec.source_sequence is None:
-            rec.source_sequence = seq
-            records_to_update_seq.append(rec)
-
-    if records_to_update_seq:
-        Record.objects.bulk_update(records_to_update_seq, ["source_sequence"])
-
-
 @shared_task(bind=True, max_retries=3)
 def sync_query_upstream(self, query_id):
-    from audit.models import AuditLog
-    from clinical.models import Query
 
     try:
         query = Query.objects.get(id=query_id)
@@ -347,9 +296,6 @@ def poll_edc_queries():
 
 @shared_task
 def export_cdisc_task(job_id):
-    from clinical.exports.odm import create_odm_xml
-    from clinical.models import ExportJob, Study
-    from events.models import OutboundEvent
 
     try:
         job = ExportJob.objects.get(id=job_id)
@@ -359,10 +305,6 @@ def export_cdisc_task(job_id):
         study = job.study if hasattr(job, "study") else Study.objects.first()  # Default to first study if not linked
 
         tmp_zip_path = create_odm_xml(study, job)
-
-        from django.db import transaction
-
-        from clinical.storage import get_storage_adapter
 
         adapter = get_storage_adapter()
         try:
@@ -382,8 +324,6 @@ def export_cdisc_task(job_id):
                     payload={"job_id": job.id, "download_url": f"/api/clinical/export/cdisc/{job.id}/download"},
                 )
         finally:
-            import os
-
             if os.path.exists(tmp_zip_path):
                 os.remove(tmp_zip_path)
     except Exception as e:

@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from clinical.models import Coding, Query, Record, RecordRevision, Subject, Visit
+from clinical.models import Coding, Form, Interval, Query, Record, RecordRevision, Site, Study, Subject, Variable, Visit
 
 
 class Command(BaseCommand):
@@ -9,7 +9,6 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         # The backfilling should estimate clinical_timestamp from created_at if missing
         self.stdout.write("Backfilling missing clinical_timestamps with created_at...")
-        from clinical.models import Form, Interval, Site, Study, Variable
 
         for model in [Study, Site, Subject, Form, Interval, Variable, Visit, Record, Coding, Query, RecordRevision]:
             records_to_update = []

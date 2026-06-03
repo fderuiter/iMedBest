@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from audit.models import AuditLog
 from clinical.models import Form, Interval, Record, Site, Subject, Variable
+from users.models import User
 
 
 def escape_xml(value):
@@ -92,7 +93,6 @@ def create_odm_xml(study, job):
         # Actually, let's just dump all users involved in audit logs.
         # To be safe and fast, we can just iterate over all User objects and write them if they exist in logs,
         # but for now, let's just output a generic system user, or all users in DB since it's an internal platform.
-        from users.models import User
 
         mask_pii = getattr(study, "pii_masking_enabled", False)
         for user in User.objects.all().iterator(chunk_size=1000):

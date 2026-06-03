@@ -3,6 +3,7 @@ import time
 
 from django.core.management.base import BaseCommand
 
+from clinical.adapter import MultiVendorAdapter
 from clinical.models import SyncJob, SyncTask
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ class Command(BaseCommand):
             if all(d.status == "COMPLETED" for d in deps):
                 task_to_run = task
                 break
-                
+
         if not task_to_run:
             # Check for failed dependencies
             failed_found = False
@@ -66,7 +67,7 @@ class Command(BaseCommand):
                     task.error_message = "Dependency failed"
                     task.save(update_fields=["status", "error_message"])
                     failed_found = True
-            
+
             if failed_found:
                 return True
             return False
@@ -95,7 +96,6 @@ class Command(BaseCommand):
         return True
 
     def execute_task(self, task):
-        from clinical.adapter import MultiVendorAdapter
 
         class MockRequest:
             def __init__(self, user, provider):

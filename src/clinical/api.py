@@ -1,13 +1,30 @@
 # ruff: noqa: ERA001
+
+import json
 import logging
+from typing import Any
 
 import ninja.orm
 import ninja.schema
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
+from django.http import Http404, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from ninja import ModelSchema, Router
+from ninja.errors import HttpError
 from ninja.security import APIKeyHeader, HttpBearer
 from pydantic.alias_generators import to_camel
+
+from clinical.adapter import MultiVendorAdapter
+from clinical.models import ExportJob
+from clinical.storage import get_storage_adapter
+from clinical.services import get_accessible_sites, get_accessible_studies, get_accessible_subjects
+from clinical.tasks import export_cdisc_task, orchestrate_sync_job, sync_query_upstream
+from users.jwt import decode_jwt_token
+from users.models import SiteMembership
 
 ninja.schema.Schema.model_config["alias_generator"] = to_camel
 ninja.schema.Schema.model_config["populate_by_name"] = True
@@ -17,9 +34,6 @@ ninja.orm.ModelSchema.model_config["populate_by_name"] = True
 
 class JWTBearer(HttpBearer):
     def authenticate(self, request, token):
-        from ninja.errors import HttpError
-
-        from users.jwt import decode_jwt_token
 
         studyKey = request.headers.get("studyKey") or request.GET.get("studyKey")
         siteKey = request.headers.get("siteKey") or request.GET.get("siteKey")
@@ -94,7 +108,6 @@ class IMednetAPIAuth(APIKeyHeader):
 
 
 def check_write_allowed(request):
-    from ninja.errors import HttpError
 
     if getattr(request, "auth_method", "") == "SpecCompliant" or "/v1/" in request.path:
         raise HttpError(405, "Method Not Allowed")
@@ -434,91 +447,10 @@ class RecordRevisionSchemaOut(ModelSchema):
 from django.db.models import Q
 
 
-def get_accessible_studies(request):
-    from users.models import SiteMembership, StudyMembership
-
-    user = request.user
-
-    qs = Study.objects.all()
-    if request.studyKey:
-        qs = qs.filter(external_id=request.studyKey)
-    elif request.siteKey:
-        qs = qs.filter(sites__external_id=request.siteKey)
-
-    if user.is_staff or user.is_superuser:
-        return qs.distinct()
-
-    auditor_study_ids = StudyMembership.objects.filter(user=user, role="clinical_auditor").values_list(
-        "study_id", flat=True
-    )
-    investigator_study_ids = SiteMembership.objects.filter(user=user, role="site_investigator").values_list(
-        "site__study_id", flat=True
-    )
-    return qs.filter(Q(id__in=auditor_study_ids) | Q(id__in=investigator_study_ids)).distinct()
-
-
-def get_accessible_sites(request):
-    from users.models import SiteMembership, StudyMembership
-
-    user = request.user
-
-    qs = Site.objects.all()
-    if request.siteKey:
-        qs = qs.filter(external_id=request.siteKey)
-    if request.studyKey:
-        qs = qs.filter(study__external_id=request.studyKey)
-
-    if user.is_staff or user.is_superuser:
-        return qs.distinct()
-
-    auditor_study_ids = StudyMembership.objects.filter(user=user, role="clinical_auditor").values_list(
-        "study_id", flat=True
-    )
-    investigator_site_ids = SiteMembership.objects.filter(user=user, role="site_investigator").values_list(
-        "site_id", flat=True
-    )
-    return qs.filter(Q(study_id__in=auditor_study_ids) | Q(id__in=investigator_site_ids)).distinct()
-
-
-def get_accessible_subjects(request):
-    from users.models import SiteMembership, StudyMembership
-
-    user = request.user
-
-    qs = Subject.objects.all()
-    if request.siteKey:
-        qs = qs.filter(site__external_id=request.siteKey)
-    if request.studyKey:
-        qs = qs.filter(site__study__external_id=request.studyKey)
-
-    if user.is_staff or user.is_superuser:
-        return qs.distinct()
-
-    auditor_study_ids = StudyMembership.objects.filter(user=user, role="clinical_auditor").values_list(
-        "study_id", flat=True
-    )
-    investigator_site_ids = SiteMembership.objects.filter(user=user, role="site_investigator").values_list(
-        "site_id", flat=True
-    )
-    return qs.filter(Q(site__study_id__in=auditor_study_ids) | Q(site_id__in=investigator_site_ids)).distinct()
-
-
-import json
-from typing import Any
-
-from django.core.exceptions import PermissionDenied
-
-
 def _queue_single_task(request, entity_type: str, payload_obj) -> tuple[int, Any]:
     if not (request.user.is_staff or request.user.is_superuser):
-        from users.models import SiteMembership
-
         if not SiteMembership.objects.filter(user=request.user, role="site_investigator").exists():
             raise PermissionDenied("Clinical Auditors have read-only access.")
-
-    from django.db import transaction
-
-    from clinical.adapter import MultiVendorAdapter
 
     payload_dict = json.loads(payload_obj.model_dump_json(by_alias=False))
     provider = getattr(request, "provider", None)
@@ -544,18 +476,15 @@ def _queue_single_task(request, entity_type: str, payload_obj) -> tuple[int, Any
 # --- Endpoints ---
 
 
-from .graph import topological_sort_entities, get_provider_dependencies
+from .graph import get_provider_dependencies, topological_sort_entities
+
 
 @router.post("/sync-jobs", response={200: SyncJobResponse, 400: dict})
 def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = None):
     check_write_allowed(request)
     if not (request.user.is_staff or request.user.is_superuser):
-        from users.models import SiteMembership
-
         if not SiteMembership.objects.filter(user=request.user, role="site_investigator").exists():
             raise PermissionDenied("Clinical Auditors have read-only access.")
-
-    from django.db import transaction
 
     provider = getattr(request, "provider", None)
 
@@ -564,7 +493,17 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
 
     # Validate entity types
     valid_entity_types = {
-        "Study", "Site", "Form", "Interval", "Subject", "Variable", "Visit", "Record", "Coding", "Query", "RecordRevision"
+        "Study",
+        "Site",
+        "Form",
+        "Interval",
+        "Subject",
+        "Variable",
+        "Visit",
+        "Record",
+        "Coding",
+        "Query",
+        "RecordRevision",
     }
     for entity in sorted_entities:
         if entity.entity_type not in valid_entity_types:
@@ -573,7 +512,7 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
     try:
         with transaction.atomic():
             job = SyncJob.objects.create(user=request.user, provider=provider, status="PENDING")
-            
+
             # Create tasks, and map their temporary IDs to set dependencies
             task_objects = []
             entity_type_to_task = {}
@@ -599,13 +538,11 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
                         task.dependencies.add(pt)
 
         # Trigger celery orchestrator
-        from clinical.tasks import orchestrate_sync_job
+
         orchestrate_sync_job.delay(job.id, request.user.id)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
-        return 200, SyncJobResponse(
-            job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url
-        )
+        return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
     except Exception as e:
         return 400, {"message": f"Sync failed. Error: {e!s}"}
 
@@ -622,20 +559,6 @@ def api_sync_study(request, payload: StudySchemaIn, studyKey: str | None = None)
     return _queue_single_task(request, "Study", payload)
 
 
-def sync_study(request, payload: StudySchemaIn):
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp,
-        "source_sequence": payload.source_sequence,
-        "name": payload.name,
-        "updated_by": request.user,
-    }
-    study, _ = Study.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
-    check_and_process_orphans(study.external_id)
-    return study
-
-
 @router.get("/studies", response=list[StudySchemaOut])
 def list_studies(request, studyKey: str | None = None):
     return get_accessible_studies(request)
@@ -646,27 +569,6 @@ def list_studies(request, studyKey: str | None = None):
 def api_sync_site(request, payload: SiteSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, "Site", payload)
-
-
-def sync_site(request, payload: SiteSchemaIn):
-    study = get_accessible_studies(request).filter(external_id=payload.study_ext_id).first()
-    if not study:
-        BufferedOrphan.objects.create(
-            entity_type="Site", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp,
-        "source_sequence": payload.source_sequence,
-        "study": study,
-        "name": payload.name,
-        "updated_by": request.user,
-    }
-    site, _ = Site.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
-    check_and_process_orphans(site.external_id)
-    return site
 
 
 @router.get("/sites", response=list[SiteSchemaOut])
@@ -681,27 +583,6 @@ def api_sync_subject(request, payload: SubjectSchemaIn, studyKey: str | None = N
     return _queue_single_task(request, "Subject", payload)
 
 
-def sync_subject(request, payload: SubjectSchemaIn):
-    site = get_accessible_sites(request).filter(external_id=payload.site_ext_id).first()
-    if not site:
-        BufferedOrphan.objects.create(
-            entity_type="Subject", missing_parent_id=payload.site_ext_id, payload=payload.dict(), user=request.user
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp,
-        "source_sequence": payload.source_sequence,
-        "site": site,
-        "name": payload.name,
-        "updated_by": request.user,
-    }
-    subject, _ = Subject.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
-    check_and_process_orphans(subject.external_id)
-    return subject
-
-
 @router.get("/subjects", response=list[SubjectSchemaOut])
 def list_subjects(request, studyKey: str | None = None):
     return get_accessible_subjects(request).select_related("site")
@@ -712,27 +593,6 @@ def list_subjects(request, studyKey: str | None = None):
 def api_sync_form(request, payload: FormSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, "Form", payload)
-
-
-def sync_form(request, payload: FormSchemaIn):
-    study = get_accessible_studies(request).filter(external_id=payload.study_ext_id).first()
-    if not study:
-        BufferedOrphan.objects.create(
-            entity_type="Form", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp,
-        "source_sequence": payload.source_sequence,
-        "study": study,
-        "name": payload.name,
-        "updated_by": request.user,
-    }
-    form, _ = Form.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
-    check_and_process_orphans(form.external_id)
-    return form
 
 
 @router.get("/forms", response=list[FormSchemaOut])
@@ -747,27 +607,6 @@ def api_sync_interval(request, payload: IntervalSchemaIn, studyKey: str | None =
     return _queue_single_task(request, "Interval", payload)
 
 
-def sync_interval(request, payload: IntervalSchemaIn):
-    study = get_accessible_studies(request).filter(external_id=payload.study_ext_id).first()
-    if not study:
-        BufferedOrphan.objects.create(
-            entity_type="Interval", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp,
-        "source_sequence": payload.source_sequence,
-        "study": study,
-        "name": payload.name,
-        "updated_by": request.user,
-    }
-    interval, _ = Interval.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
-    check_and_process_orphans(interval.external_id)
-    return interval
-
-
 @router.get("/intervals", response=list[IntervalSchemaOut])
 def list_intervals(request, studyKey: str | None = None):
     return Interval.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
@@ -778,29 +617,6 @@ def list_intervals(request, studyKey: str | None = None):
 def api_sync_variable(request, payload: VariableSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, "Variable", payload)
-
-
-def sync_variable(request, payload: VariableSchemaIn):
-    form = (
-        Form.objects.filter(study__in=get_accessible_studies(request)).filter(external_id=payload.form_ext_id).first()
-    )
-    if not form:
-        BufferedOrphan.objects.create(
-            entity_type="Variable", missing_parent_id=payload.form_ext_id, payload=payload.dict(), user=request.user
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp,
-        "source_sequence": payload.source_sequence,
-        "form": form,
-        "name": payload.name,
-        "updated_by": request.user,
-    }
-    variable, _ = Variable.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
-    check_and_process_orphans(variable.external_id)
-    return variable
 
 
 @router.get("/variables", response=list[VariableSchemaOut])
@@ -815,37 +631,6 @@ def api_sync_visit(request, payload: VisitSchemaIn, studyKey: str | None = None)
     return _queue_single_task(request, "Visit", payload)
 
 
-def sync_visit(request, payload: VisitSchemaIn):
-    subject = get_accessible_subjects(request).filter(external_id=payload.subject_ext_id).first()
-    if not subject:
-        BufferedOrphan.objects.create(
-            entity_type="Visit", missing_parent_id=payload.subject_ext_id, payload=payload.dict(), user=request.user
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-    interval = (
-        Interval.objects.filter(study__in=get_accessible_studies(request))
-        .filter(external_id=payload.interval_ext_id)
-        .first()
-    )
-    if not interval:
-        BufferedOrphan.objects.create(
-            entity_type="Visit", missing_parent_id=payload.interval_ext_id, payload=payload.dict(), user=request.user
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp,
-        "source_sequence": payload.source_sequence,
-        "subject": subject,
-        "interval": interval,
-        "updated_by": request.user,
-    }
-    visit, _ = Visit.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
-    check_and_process_orphans(visit.external_id)
-    return visit
-
-
 @router.get("/visits", response=list[VisitSchemaOut])
 def list_visits(request, studyKey: str | None = None):
     return Visit.objects.filter(subject__in=get_accessible_subjects(request)).select_related("subject", "interval")
@@ -856,42 +641,6 @@ def list_visits(request, studyKey: str | None = None):
 def api_sync_record(request, payload: RecordSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, "Record", payload)
-
-
-def sync_record(request, payload: RecordSchemaIn):
-    visit = (
-        Visit.objects.filter(subject__in=get_accessible_subjects(request))
-        .filter(external_id=payload.visit_ext_id)
-        .first()
-    )
-    if not visit:
-        BufferedOrphan.objects.create(
-            entity_type="Record", missing_parent_id=payload.visit_ext_id, payload=payload.dict(), user=request.user
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-    variable = (
-        Variable.objects.filter(form__study__in=get_accessible_studies(request))
-        .filter(external_id=payload.variable_ext_id)
-        .first()
-    )
-    if not variable:
-        BufferedOrphan.objects.create(
-            entity_type="Record", missing_parent_id=payload.variable_ext_id, payload=payload.dict(), user=request.user
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp,
-        "source_sequence": payload.source_sequence,
-        "visit": visit,
-        "variable": variable,
-        "value": payload.value,
-        "updated_by": request.user,
-    }
-    record, _ = Record.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
-    check_and_process_orphans(record.external_id)
-    return record
 
 
 @router.get("/records", response=list[RecordSchemaOut])
@@ -908,31 +657,6 @@ def api_sync_coding(request, payload: CodingSchemaIn, studyKey: str | None = Non
     return _queue_single_task(request, "Coding", payload)
 
 
-def sync_coding(request, payload: CodingSchemaIn):
-    record = (
-        Record.objects.filter(visit__subject__in=get_accessible_subjects(request))
-        .filter(external_id=payload.record_ext_id)
-        .first()
-    )
-    if not record:
-        BufferedOrphan.objects.create(
-            entity_type="Coding", missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp,
-        "source_sequence": payload.source_sequence,
-        "record": record,
-        "code": payload.code,
-        "updated_by": request.user,
-    }
-    coding, _ = Coding.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
-    check_and_process_orphans(coding.external_id)
-    return coding
-
-
 @router.get("/codings", response=list[CodingSchemaOut])
 def list_codings(request, studyKey: str | None = None):
     return Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
@@ -943,56 +667,6 @@ def list_codings(request, studyKey: str | None = None):
 def api_sync_query(request, payload: QuerySchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, "Query", payload)
-
-
-def sync_query(request, payload: QuerySchemaIn):
-    record = (
-        Record.objects.filter(visit__subject__in=get_accessible_subjects(request))
-        .filter(external_id=payload.record_ext_id)
-        .first()
-    )
-    if not record:
-        BufferedOrphan.objects.create(
-            entity_type="Query", missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-
-    query = Query.objects.filter(external_id=payload.external_id).first()
-
-    if query:
-        # Reconciliation logic
-        if query.sync_status == "PENDING":
-            if payload.status == query.status:
-                # Upstream confirmed our optimistic state!
-                query.sync_status = "CONFIRMED"
-            else:
-                # Replica is likely stale, don't overwrite optimistic status
-                pass
-        else:
-            # Not pending, just accept replica's status
-            query.status = payload.status or "OPEN"
-            query.sync_status = "CONFIRMED"
-
-        query.clinical_timestamp = payload.clinical_timestamp
-        query.source_sequence = payload.source_sequence
-        query.text = payload.text
-        query.updated_by = request.user
-        query.save()
-    else:
-        query = Query.objects.create(
-            external_id=payload.external_id,
-            record=record,
-            clinical_timestamp=payload.clinical_timestamp,
-            source_sequence=payload.source_sequence,
-            text=payload.text,
-            status=payload.status or "OPEN",
-            sync_status="CONFIRMED",
-            created_by=request.user,
-            updated_by=request.user,
-        )
-
-    check_and_process_orphans(query.external_id)
-    return query
 
 
 @router.get("/queries", response=list[QuerySchemaOut])
@@ -1009,13 +683,9 @@ def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str |
     query.sync_status = "PENDING"
     query.save(update_fields=["status", "previous_status", "sync_status", "updated_at"])
 
-    from django.core.cache import cache
-    from django.utils import timezone
-
     cache.set("last_query_activity_time", timezone.now(), timeout=86400)
 
     # Trigger background sync to upstream EDC
-    from clinical.tasks import sync_query_upstream
 
     sync_query_upstream.delay(query.id)
 
@@ -1027,34 +697,6 @@ def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str |
 def api_sync_revision(request, payload: RecordRevisionSchemaIn, studyKey: str | None = None):
     check_write_allowed(request)
     return _queue_single_task(request, "RecordRevision", payload)
-
-
-def sync_revision(request, payload: RecordRevisionSchemaIn):
-    record = (
-        Record.objects.filter(visit__subject__in=get_accessible_subjects(request))
-        .filter(external_id=payload.record_ext_id)
-        .first()
-    )
-    if not record:
-        BufferedOrphan.objects.create(
-            entity_type="RecordRevision",
-            missing_parent_id=payload.record_ext_id,
-            payload=payload.dict(),
-            user=request.user,
-        )
-        return 202, {"message": "Buffered due to missing parent"}
-    defaults = {
-        "clinical_timestamp": payload.clinical_timestamp,
-        "source_sequence": payload.source_sequence,
-        "record": record,
-        "value": payload.value,
-        "updated_by": request.user,
-    }
-    revision, _ = RecordRevision.objects.update_or_create(
-        external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
-    )
-    check_and_process_orphans(revision.external_id)
-    return revision
 
 
 @router.get("/revisions", response=list[RecordRevisionSchemaOut])
@@ -1070,12 +712,7 @@ def export_cdisc_package(request, studyKey: str | None = None):
     roles = getattr(request, "user_roles", [])
     has_privilege = any(r in str(roles).lower() for r in ["export", "extractor", "cdisc"])
     if not (has_privilege or request.user.is_staff or request.user.is_superuser):
-        from django.http import HttpResponseForbidden
-
         return HttpResponseForbidden("Missing data-extraction privileges")
-
-    from clinical.models import ExportJob
-    from clinical.tasks import export_cdisc_task
 
     job = ExportJob.objects.create(user=request.user)
     # Trigger background task
@@ -1086,10 +723,6 @@ def export_cdisc_package(request, studyKey: str | None = None):
 
 @router.get("/export/cdisc/{job_id}/download")
 def download_cdisc_package(request, job_id: int):
-    from django.http import Http404, HttpResponse
-
-    from clinical.models import ExportJob
-    from clinical.storage import get_storage_adapter
 
     try:
         job = ExportJob.objects.get(id=job_id)
@@ -1114,39 +747,11 @@ class BufferedOrphanSchemaOut(ModelSchema):
 @router.get("/orphans", response=list[BufferedOrphanSchemaOut])
 def list_orphans(request, studyKey: str | None = None):
     if not (request.user.is_staff or request.user.is_superuser):
-        from django.core.exceptions import PermissionDenied
-
         raise PermissionDenied("Admin access required")
     return BufferedOrphan.objects.all()
 
 
-from django.db import transaction
-
-from .adapter import MultiVendorAdapter
-
-
-def check_and_process_orphans(parent_external_id):
-    orphans = list(BufferedOrphan.objects.filter(missing_parent_id=parent_external_id))
-    for orphan in orphans:
-        try:
-            with transaction.atomic():
-                _reprocess_orphan(orphan)
-        except Exception as e:
-            logger.warning("Orphan reprocessing failed for parent %s: %s", parent_external_id, e)
-
-
-def _reprocess_orphan(orphan):
-    req = type("DummyRequest", (object,), {"user": orphan.user, "provider": orphan.provider, "user_roles": ["cdisc"]})()
-
-    adapter = MultiVendorAdapter(orphan.provider)
-    adapter.sync_entity(req, orphan.entity_type, orphan.payload)
-
-    orphan.delete()
-
-
 # --- DELETE & TRASH ENDPOINTS ---
-
-from django.http import Http404
 
 
 def _get_model_class(entity_type: str):
@@ -1170,8 +775,6 @@ def _get_model_class(entity_type: str):
 def delete_entity(request, entity_plural: str, external_id: str, studyKey: str | None = None):
     check_write_allowed(request)
     if not (request.user.is_staff or request.user.is_superuser):
-        from users.models import SiteMembership
-
         if not SiteMembership.objects.filter(user=request.user, role="site_investigator").exists():
             raise PermissionDenied("Clinical Auditors have read-only access.")
 
@@ -1224,8 +827,6 @@ class TrashItemOut(ModelSchema):
 @router.get("/trash/items")
 def list_trash(request, studyKey: str | None = None):
     if not (request.user.is_staff or request.user.is_superuser):
-        from django.http import HttpResponseForbidden
-
         return HttpResponseForbidden("Admin access required")
 
     results = []
@@ -1248,8 +849,6 @@ def list_trash(request, studyKey: str | None = None):
 def restore_entity(request, entity_type: str, external_id: str, studyKey: str | None = None):
     check_write_allowed(request)
     if not (request.user.is_staff or request.user.is_superuser):
-        from django.http import HttpResponseForbidden
-
         return HttpResponseForbidden("Admin access required")
 
     models_map = {
@@ -1273,8 +872,6 @@ def restore_entity(request, entity_type: str, external_id: str, studyKey: str | 
     try:
         obj.restore()
     except ValueError as e:
-        from django.http import HttpResponseBadRequest
-
         return HttpResponseBadRequest(str(e))
 
     return 200, {"message": "Restored successfully"}

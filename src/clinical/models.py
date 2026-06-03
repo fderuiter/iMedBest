@@ -6,6 +6,8 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
+from clinical.services import reconstruct_subject_timeline
+
 
 class Provider(models.Model):
     name = models.CharField(max_length=255, unique=True)
@@ -271,8 +273,6 @@ def create_record_revision(sender, instance, created, **kwargs):
 def trigger_longitudinal_reconstruction(sender, instance, created, update_fields, **kwargs):
     # If the visit is saved, it might be a new baseline or an updated baseline
     if created or (update_fields and "clinical_timestamp" in update_fields) or not update_fields:
-        from clinical.tasks import reconstruct_subject_timeline
-
         transaction.on_commit(lambda: reconstruct_subject_timeline.delay(instance.subject.id))
 
 

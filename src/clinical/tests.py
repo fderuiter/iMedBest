@@ -1,7 +1,12 @@
+import io
+import zipfile
+from xml.etree import ElementTree
+
 import pytest
 from django.contrib.auth import get_user_model
 
 from clinical.management.commands.run_sync_worker import Command as WorkerCommand
+from clinical.models import ExportJob, Study, SyncJob
 from users.jwt import create_jwt_token
 
 from .models import Record, SyncJob
@@ -26,7 +31,7 @@ def process_all_jobs():
             break
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_multi_level_data_import(client):
     headers = get_auth_headers("study-1")
     # Level 1
@@ -205,15 +210,9 @@ def test_longitudinal_reconstruction(client):
 
     resp_dl = client.get(f"/api/clinical/export/cdisc/{job_id}/download", **headers)
     if resp_dl.status_code != 200:
-        from clinical.models import ExportJob
-
         job = ExportJob.objects.get(id=job_id)
         print("FAILED JOB:", job.status, job.error_message)  # noqa: T201
     assert resp_dl.status_code == 200
-
-    import io
-    import zipfile
-    from xml.etree import ElementTree
 
     z = zipfile.ZipFile(io.BytesIO(resp_dl.content))
     xml_data = z.read("cdisc_export.xml").decode("utf-8")
@@ -227,10 +226,9 @@ def test_longitudinal_reconstruction(client):
     assert values == ["85", "90"]
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_job_endpoint(client):
     headers = get_auth_headers("study-async")
-    from clinical.models import SyncJob
 
     payload = {
         "entities": [
@@ -261,7 +259,7 @@ def test_sync_job_endpoint(client):
     assert job.tasks.count() == 2
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_job_atomic_failure(client):
     headers = get_auth_headers("study-atomic")
 
@@ -280,10 +278,7 @@ def test_sync_job_atomic_failure(client):
                 "entityType": "Study",
                 "payload": {"externalId": "study-atomic", "name": "Atomic Study"},
             },
-            {
-                "entityType": "UnknownEntity",
-                "payload": {"externalId": "site-atomic"}
-            },
+            {"entityType": "UnknownEntity", "payload": {"externalId": "site-atomic"}},
         ]
     }
 
@@ -291,6 +286,5 @@ def test_sync_job_atomic_failure(client):
     assert resp.status_code == 400
 
     # Verify rollback: Study should NOT be created
-    from clinical.models import Study
 
     assert not Study.objects.filter(external_id="study-atomic").exists()

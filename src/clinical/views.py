@@ -6,8 +6,9 @@ from django.views import View
 from django.views.generic import TemplateView
 from django_celery_results.models import TaskResult
 
-from .models import Provider, Record, Subject, SyncJob
-from .tasks import reconstruct_subject_timeline
+from clinical.services import reconstruct_subject_timeline
+
+from .models import Provider, Record, Subject, SyncJob, SyncTask
 
 
 class DashboardView(TemplateView):
@@ -54,15 +55,13 @@ class DashboardView(TemplateView):
 
         # Timeline Reconstruction Tasks (Celery tasks)
         context["reconstruction_tasks"] = TaskResult.objects.filter(
-            task_name="clinical.tasks.reconstruct_subject_timeline"
+            task_name="clinical.services.reconstruct_subject_timeline"
         ).order_by("-date_done")[:10]
 
         return context
 
     def _calculate_mapping_rate(self, provider):
         # success rates for clinical entity mapping
-        from .models import SyncTask
-
         tasks = SyncTask.objects.filter(job__provider=provider)
         total = tasks.count()
         if total == 0:

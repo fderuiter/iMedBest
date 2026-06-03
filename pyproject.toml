@@ -68,7 +68,6 @@ ignore = [
     "S101",    # Allow assert statements (useful for testing)
     "N803",    # camelCase args required by external API spec (studyKey, siteKey, etc.)
     "N806",    # camelCase vars in functions (same reason as above)
-    "PLC0415", # Deferred imports are intentional to avoid circular dependencies
     "E402",    # Mid-module imports used in AppConfig.ready() and signal connection patterns
     "PTH",     # os.path is used consistently throughout; pathlib migration is a separate task
     "RUF012",  # Django Meta class list/dict attributes don't need ClassVar annotations by convention
@@ -82,6 +81,13 @@ ignore = [
 # Do not enforce strict linter rules on auto-generated Django migrations
 "src/**/migrations/*.py" = ["E501", "N806", "N999", "RUF012"]
 "src/manage.py" = ["PLC0415"]
+"src/audit/**/*.py" = ["PLC0415"]
+"src/events/**/*.py" = ["PLC0415"]
+"src/users/**/*.py" = ["PLC0415"]
+"src/clinical/**/test_*.py" = ["PLC0415"]
+"src/clinical/**/tests.py" = ["PLC0415"]
+"src/clinical/exports/**/*.py" = ["PLC0415"]
+"src/clinical/management/commands/*.py" = ["PLC0415"]
 
 [tool.ruff.format]
 quote-style = "double"

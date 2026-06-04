@@ -43,6 +43,7 @@ class JWTBearer(HttpBearer):
         return None
 
 
+from .graph import ClinicalGraphEngine
 from .models import (
     BufferedOrphan,
     Coding,
@@ -632,7 +633,7 @@ def sync_study(request, payload: StudySchemaIn):
     study, _ = Study.objects.update_or_create(
         external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
     )
-    check_and_process_orphans(study.external_id)
+    ClinicalGraphEngine().resolve_orphans(study.external_id)
     return study
 
 
@@ -651,9 +652,7 @@ def api_sync_site(request, payload: SiteSchemaIn, studyKey: str | None = None):
 def sync_site(request, payload: SiteSchemaIn):
     study = get_accessible_studies(request).filter(external_id=payload.study_ext_id).first()
     if not study:
-        BufferedOrphan.objects.create(
-            entity_type="Site", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="Site", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user)
         return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
@@ -665,7 +664,7 @@ def sync_site(request, payload: SiteSchemaIn):
     site, _ = Site.objects.update_or_create(
         external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
     )
-    check_and_process_orphans(site.external_id)
+    ClinicalGraphEngine().resolve_orphans(site.external_id)
     return site
 
 
@@ -684,9 +683,7 @@ def api_sync_subject(request, payload: SubjectSchemaIn, studyKey: str | None = N
 def sync_subject(request, payload: SubjectSchemaIn):
     site = get_accessible_sites(request).filter(external_id=payload.site_ext_id).first()
     if not site:
-        BufferedOrphan.objects.create(
-            entity_type="Subject", missing_parent_id=payload.site_ext_id, payload=payload.dict(), user=request.user
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="Subject", missing_parent_id=payload.site_ext_id, payload=payload.dict(), user=request.user)
         return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
@@ -698,7 +695,7 @@ def sync_subject(request, payload: SubjectSchemaIn):
     subject, _ = Subject.objects.update_or_create(
         external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
     )
-    check_and_process_orphans(subject.external_id)
+    ClinicalGraphEngine().resolve_orphans(subject.external_id)
     return subject
 
 
@@ -717,9 +714,7 @@ def api_sync_form(request, payload: FormSchemaIn, studyKey: str | None = None):
 def sync_form(request, payload: FormSchemaIn):
     study = get_accessible_studies(request).filter(external_id=payload.study_ext_id).first()
     if not study:
-        BufferedOrphan.objects.create(
-            entity_type="Form", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="Form", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user)
         return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
@@ -731,7 +726,7 @@ def sync_form(request, payload: FormSchemaIn):
     form, _ = Form.objects.update_or_create(
         external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
     )
-    check_and_process_orphans(form.external_id)
+    ClinicalGraphEngine().resolve_orphans(form.external_id)
     return form
 
 
@@ -750,9 +745,7 @@ def api_sync_interval(request, payload: IntervalSchemaIn, studyKey: str | None =
 def sync_interval(request, payload: IntervalSchemaIn):
     study = get_accessible_studies(request).filter(external_id=payload.study_ext_id).first()
     if not study:
-        BufferedOrphan.objects.create(
-            entity_type="Interval", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="Interval", missing_parent_id=payload.study_ext_id, payload=payload.dict(), user=request.user)
         return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
@@ -764,7 +757,7 @@ def sync_interval(request, payload: IntervalSchemaIn):
     interval, _ = Interval.objects.update_or_create(
         external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
     )
-    check_and_process_orphans(interval.external_id)
+    ClinicalGraphEngine().resolve_orphans(interval.external_id)
     return interval
 
 
@@ -785,9 +778,7 @@ def sync_variable(request, payload: VariableSchemaIn):
         Form.objects.filter(study__in=get_accessible_studies(request)).filter(external_id=payload.form_ext_id).first()
     )
     if not form:
-        BufferedOrphan.objects.create(
-            entity_type="Variable", missing_parent_id=payload.form_ext_id, payload=payload.dict(), user=request.user
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="Variable", missing_parent_id=payload.form_ext_id, payload=payload.dict(), user=request.user)
         return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
@@ -799,7 +790,7 @@ def sync_variable(request, payload: VariableSchemaIn):
     variable, _ = Variable.objects.update_or_create(
         external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
     )
-    check_and_process_orphans(variable.external_id)
+    ClinicalGraphEngine().resolve_orphans(variable.external_id)
     return variable
 
 
@@ -818,9 +809,7 @@ def api_sync_visit(request, payload: VisitSchemaIn, studyKey: str | None = None)
 def sync_visit(request, payload: VisitSchemaIn):
     subject = get_accessible_subjects(request).filter(external_id=payload.subject_ext_id).first()
     if not subject:
-        BufferedOrphan.objects.create(
-            entity_type="Visit", missing_parent_id=payload.subject_ext_id, payload=payload.dict(), user=request.user
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="Visit", missing_parent_id=payload.subject_ext_id, payload=payload.dict(), user=request.user)
         return 202, {"message": "Buffered due to missing parent"}
     interval = (
         Interval.objects.filter(study__in=get_accessible_studies(request))
@@ -828,9 +817,7 @@ def sync_visit(request, payload: VisitSchemaIn):
         .first()
     )
     if not interval:
-        BufferedOrphan.objects.create(
-            entity_type="Visit", missing_parent_id=payload.interval_ext_id, payload=payload.dict(), user=request.user
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="Visit", missing_parent_id=payload.interval_ext_id, payload=payload.dict(), user=request.user)
         return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
@@ -842,7 +829,7 @@ def sync_visit(request, payload: VisitSchemaIn):
     visit, _ = Visit.objects.update_or_create(
         external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
     )
-    check_and_process_orphans(visit.external_id)
+    ClinicalGraphEngine().resolve_orphans(visit.external_id)
     return visit
 
 
@@ -865,9 +852,7 @@ def sync_record(request, payload: RecordSchemaIn):
         .first()
     )
     if not visit:
-        BufferedOrphan.objects.create(
-            entity_type="Record", missing_parent_id=payload.visit_ext_id, payload=payload.dict(), user=request.user
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="Record", missing_parent_id=payload.visit_ext_id, payload=payload.dict(), user=request.user)
         return 202, {"message": "Buffered due to missing parent"}
     variable = (
         Variable.objects.filter(form__study__in=get_accessible_studies(request))
@@ -875,9 +860,7 @@ def sync_record(request, payload: RecordSchemaIn):
         .first()
     )
     if not variable:
-        BufferedOrphan.objects.create(
-            entity_type="Record", missing_parent_id=payload.variable_ext_id, payload=payload.dict(), user=request.user
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="Record", missing_parent_id=payload.variable_ext_id, payload=payload.dict(), user=request.user)
         return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
@@ -890,7 +873,7 @@ def sync_record(request, payload: RecordSchemaIn):
     record, _ = Record.objects.update_or_create(
         external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
     )
-    check_and_process_orphans(record.external_id)
+    ClinicalGraphEngine().resolve_orphans(record.external_id)
     return record
 
 
@@ -915,9 +898,7 @@ def sync_coding(request, payload: CodingSchemaIn):
         .first()
     )
     if not record:
-        BufferedOrphan.objects.create(
-            entity_type="Coding", missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="Coding", missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user)
         return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
@@ -929,7 +910,7 @@ def sync_coding(request, payload: CodingSchemaIn):
     coding, _ = Coding.objects.update_or_create(
         external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
     )
-    check_and_process_orphans(coding.external_id)
+    ClinicalGraphEngine().resolve_orphans(coding.external_id)
     return coding
 
 
@@ -952,9 +933,7 @@ def sync_query(request, payload: QuerySchemaIn):
         .first()
     )
     if not record:
-        BufferedOrphan.objects.create(
-            entity_type="Query", missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="Query", missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user)
         return 202, {"message": "Buffered due to missing parent"}
 
     query = Query.objects.filter(external_id=payload.external_id).first()
@@ -991,7 +970,7 @@ def sync_query(request, payload: QuerySchemaIn):
             updated_by=request.user,
         )
 
-    check_and_process_orphans(query.external_id)
+    ClinicalGraphEngine().resolve_orphans(query.external_id)
     return query
 
 
@@ -1036,12 +1015,7 @@ def sync_revision(request, payload: RecordRevisionSchemaIn):
         .first()
     )
     if not record:
-        BufferedOrphan.objects.create(
-            entity_type="RecordRevision",
-            missing_parent_id=payload.record_ext_id,
-            payload=payload.dict(),
-            user=request.user,
-        )
+        ClinicalGraphEngine().buffer_orphan(entity_type="RecordRevision", missing_parent_id=payload.record_ext_id, payload=payload.dict(), user=request.user,)
         return 202, {"message": "Buffered due to missing parent"}
     defaults = {
         "clinical_timestamp": payload.clinical_timestamp,
@@ -1053,7 +1027,7 @@ def sync_revision(request, payload: RecordRevisionSchemaIn):
     revision, _ = RecordRevision.objects.update_or_create(
         external_id=payload.external_id, defaults=defaults, create_defaults={**defaults, "created_by": request.user}
     )
-    check_and_process_orphans(revision.external_id)
+    ClinicalGraphEngine().resolve_orphans(revision.external_id)
     return revision
 
 
@@ -1123,25 +1097,6 @@ def list_orphans(request, studyKey: str | None = None):
 from django.db import transaction
 
 from .adapter import MultiVendorAdapter
-
-
-def check_and_process_orphans(parent_external_id):
-    orphans = list(BufferedOrphan.objects.filter(missing_parent_id=parent_external_id))
-    for orphan in orphans:
-        try:
-            with transaction.atomic():
-                _reprocess_orphan(orphan)
-        except Exception as e:
-            logger.warning("Orphan reprocessing failed for parent %s: %s", parent_external_id, e)
-
-
-def _reprocess_orphan(orphan):
-    req = type("DummyRequest", (object,), {"user": orphan.user, "provider": orphan.provider, "user_roles": ["cdisc"]})()
-
-    adapter = MultiVendorAdapter(orphan.provider)
-    adapter.sync_entity(req, orphan.entity_type, orphan.payload)
-
-    orphan.delete()
 
 
 # --- DELETE & TRASH ENDPOINTS ---

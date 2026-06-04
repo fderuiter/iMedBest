@@ -227,51 +227,16 @@ def purge_trash_task(days=30):
 
 @shared_task
 def reconstruct_subject_timeline(subject_id):
-    from clinical.models import Coding, Query, Record, RecordRevision, Subject, Visit
+    from clinical.models import Subject
+    from clinical.graph import ClinicalGraphEngine
 
     try:
         subject = Subject.objects.get(id=subject_id)
     except Subject.DoesNotExist:
         return
 
-    baseline = subject.baseline_date
-    if not baseline:
-        return
-
-    # Update offset_days for all descendant entities
-    models_to_update = [Visit, Record, Coding, Query, RecordRevision]
-    for model in models_to_update:
-        records_to_update = []
-        if model == Visit:
-            qs = model.objects.filter(subject=subject)
-        elif model in [Record]:
-            qs = model.objects.filter(visit__subject=subject)
-        elif model in [Coding, Query, RecordRevision]:
-            qs = model.objects.filter(record__visit__subject=subject)
-        else:
-            continue
-
-        for obj in qs.filter(clinical_timestamp__isnull=False):
-            new_offset = (obj.clinical_timestamp.date() - baseline.date()).days
-            if obj.offset_days != new_offset:
-                obj.offset_days = new_offset
-                records_to_update.append(obj)
-
-        if records_to_update:
-            model.objects.bulk_update(records_to_update, ["offset_days"])
-
-    # Update source_sequence if not set for Records
-    records = Record.objects.filter(visit__subject=subject).order_by("clinical_timestamp", "created_at")
-    records_to_update_seq = []
-    for seq, rec in enumerate(records, start=1):
-        if rec.source_sequence is None:
-            rec.source_sequence = seq
-            records_to_update_seq.append(rec)
-
-    if records_to_update_seq:
-        Record.objects.bulk_update(records_to_update_seq, ["source_sequence"])
-
-
+    engine = ClinicalGraphEngine()
+    engine.reconstruct_timeline(subject)
 @shared_task(bind=True, max_retries=3)
 def sync_query_upstream(self, query_id):
     from audit.models import AuditLog

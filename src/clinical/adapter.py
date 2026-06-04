@@ -1,3 +1,4 @@
+from .graph import ClinicalGraphEngine
 from django.apps import apps
 
 from .models import BufferedOrphan
@@ -94,13 +95,7 @@ class MultiVendorAdapter:
                     parent_obj = parent_qs.first()
 
                     if not parent_obj:
-                        BufferedOrphan.objects.create(
-                            entity_type=raw_type,
-                            missing_parent_id=parent_ext_id,
-                            payload=payload,
-                            user=request.user,
-                            provider=self.provider,
-                        )
+                        ClinicalGraphEngine().buffer_orphan(entity_type=raw_type, missing_parent_id=parent_ext_id, payload=payload, user=request.user, provider=self.provider,)
                         return 202, {"message": "Buffered due to missing parent"}
                     defaults[parent_field] = parent_obj
 
@@ -112,8 +107,6 @@ class MultiVendorAdapter:
             create_defaults={**defaults, "created_by": request.user},
         )
 
-        from .api import check_and_process_orphans
-
-        check_and_process_orphans(obj.external_id)
+        ClinicalGraphEngine().resolve_orphans(obj.external_id)
 
         return obj

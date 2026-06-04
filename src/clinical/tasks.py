@@ -114,6 +114,17 @@ def process_next_ready_tasks(self, job_id, user_id):
 
 @shared_task(bind=True, max_retries=5, acks_late=True, reject_on_worker_lost=True)
 def process_single_task(self, task_id, user_id):
+    """
+    Process a single pending SyncTask by invoking the entity-specific sync handler and advancing the job.
+    
+    Loads the SyncTask identified by task_id and, if its status is "PENDING", marks it "PROCESSING", constructs a minimal request using the specified user, and dispatches the appropriate sync handler for the task's entity_type with the task payload parsed into the corresponding schema. If the handler returns a truthy, non-tuple object, marks that object as validated. On success, marks the task "COMPLETED" and enqueues processing of the next ready tasks for the same job.
+    
+    On exception, records the error message, increments the task's retry_count, sets the task back to "PENDING" and retries with exponential backoff; if the task exceeds its retry limit, marks it "FAILED".
+    
+    Parameters:
+        task_id (int | uuid): Primary key of the SyncTask to process.
+        user_id (int | uuid): Primary key of the User to use as the request user.
+    """
     task = SyncTask.objects.get(id=task_id)
     if task.status != "PENDING":
         return

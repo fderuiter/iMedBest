@@ -95,6 +95,14 @@ class Command(BaseCommand):
         return True
 
     def execute_task(self, task):
+        """
+        Execute a sync task through the vendor adapter and mark the returned entity as validated when applicable.
+        
+        This constructs a minimal request object for the task's job/user/provider, invokes the provider-specific MultiVendorAdapter to synchronize the task's entity payload, and, if the adapter returns a single model-like object (truthy and not a tuple), sets its `is_validated` flag to True and persists that change (updating `is_validated` and `updated_at`).
+        
+        Parameters:
+            task: The SyncTask instance to execute (provides access to job, provider, payload, and entity_type).
+        """
         from clinical.adapter import MultiVendorAdapter
 
         class MockRequest:

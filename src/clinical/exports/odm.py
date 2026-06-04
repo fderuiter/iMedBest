@@ -21,6 +21,22 @@ def escape_xml(value):
 
 
 def create_odm_xml(study, job):
+    """
+    Produce an ODM snapshot of a study's metadata and clinical data and package it into a ZIP file.
+    
+    The function performs pre-export validation, writes an ODM 1.3 XML document (including Study, MetaDataVersion, AdminData, ReferenceData, ClinicalData, and Association sections) to a temporary file, compresses that file into a ZIP as `cdisc_export.xml`, removes the temporary XML file, and returns the ZIP path.
+    
+    Parameters:
+        study: Study model instance to export (used to scope intervals, forms, variables, sites, subjects, and records).
+        job: Job-like object providing an `id` used to populate the export FileOID.
+    
+    Returns:
+        str: Filesystem path to the created ZIP file containing the ODM XML (`cdisc_export.xml`).
+    
+    Raises:
+        ValueError: If buffered orphan records exist for the study's provider (lists up to five orphan summaries).
+        ValueError: If unvalidated Record instances exist in the study scope (lists up to five record external IDs).
+    """
     from clinical.models import BufferedOrphan
 
     # Pre-flight hard gate

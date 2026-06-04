@@ -510,6 +510,20 @@ from django.core.exceptions import PermissionDenied
 
 
 def _queue_single_task(request, entity_type: str, payload_obj) -> tuple[int, Any]:
+    """
+    Create a sync job and task for a single entity, invoke the provider adapter to process the payload, and mark the resulting entity as validated when applicable.
+    
+    Parameters:
+        request: Django HttpRequest; the caller's request (must have an authenticated user).
+        entity_type (str): The type name of the entity to sync (e.g., "Study", "Record").
+        payload_obj: A Pydantic/ninja schema instance containing the entity payload (must support model_dump_json()).
+    
+    Raises:
+        PermissionDenied: If the user is neither staff/superuser nor a site_investigator.
+    
+    Returns:
+        tuple[int, Any]: A pair of (HTTP status code, response payload). On success returns 200 and a SyncJobResponse containing job metadata and a status_url; on failure returns 400 and a dictionary with an error message.
+    """
     if not (request.user.is_staff or request.user.is_superuser):
         from users.models import SiteMembership
 
@@ -1139,6 +1153,15 @@ def check_and_process_orphans(parent_external_id):
 
 
 def _reprocess_orphan(orphan):
+    """
+    Attempt to reprocess a buffered orphan record and remove it when handled.
+    
+    Given a BufferedOrphan-like object, constructs a minimal request context (with the orphan's user,
+    provider, and role "cdisc") and invokes the provider adapter to synchronize the orphaned entity.
+    If the adapter returns a truthy, non-tuple result representing the created/updated model instance,
+    mark that instance as validated by setting `is_validated = True` and persist the change to
+    `is_validated` and `updated_at`. Finally, delete the orphan record.
+    """
     req = type("DummyRequest", (object,), {"user": orphan.user, "provider": orphan.provider, "user_roles": ["cdisc"]})()
 
     adapter = MultiVendorAdapter(orphan.provider)

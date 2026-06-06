@@ -7,10 +7,12 @@ from users.jwt import create_jwt_token
 
 
 def get_auth_headers():
+    from clinical.models import Provider
+    provider, _ = Provider.objects.get_or_create(name="Test Provider")
     User = get_user_model()
     user, _ = User.objects.get_or_create(username="test_user", is_staff=True)
     token = create_jwt_token(user)
-    return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": "test-study"}
+    return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": "test-study", "HTTP_X_PROVIDER": str(provider.id)}
 
 
 def process_all_jobs():
@@ -25,7 +27,7 @@ def process_all_jobs():
             break
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_reactive_orphan_buffering(client):
     headers = get_auth_headers()
     # Setup some base level 1 and 2
@@ -72,6 +74,11 @@ def test_reactive_orphan_buffering(client):
     process_all_jobs()
     assert rec_resp.status_code == 200
     assert BufferedOrphan.objects.count() == 1
+    
+    # Task should be in BUFFERED state, not COMPLETED
+    rec_job_id = rec_resp.json()["jobId"]
+    rec_task = SyncJob.objects.get(id=rec_job_id).tasks.first()
+    assert rec_task.status == "BUFFERED"
 
     # Sync VISIT before SUBJECT
     # Subject doesn't exist, so this will orphan the visit
@@ -99,13 +106,23 @@ def test_reactive_orphan_buffering(client):
     # Check if all orphans are processed
     assert BufferedOrphan.objects.count() == 0
 
+    # Task should now be COMPLETED
+    rec_task.refresh_from_db()
+    assert rec_task.status == "COMPLETED"
+
+    # Verify AuditLog was created for the transition
+    from audit.models import AuditLog
+    log = AuditLog.objects.filter(model_name="SyncTask", object_id=str(rec_task.id), action="UPDATE").first()
+    assert log is not None
+    assert log.changes["status"] == ["BUFFERED", "COMPLETED"]
+
     # Check if the record is successfully created in DB
     record = Record.objects.filter(external_id="rec-orphan").first()
     assert record is not None
     assert record.value == "120/80"
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_orphans_endpoint(client):
     headers = get_auth_headers()
     # This shouldn't do anything because we don't have orphans right now

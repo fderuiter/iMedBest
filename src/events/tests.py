@@ -13,15 +13,17 @@ def test_subscription(mock_hierarchy):
     return Subscription.objects.create(name="Test Sub", endpoint_url="http://mock.endpoint/webhook", event_type="", study=study)
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_hierarchy():
-    study = Study.objects.create(external_id="study1", name="Study 1")
-    site = Site.objects.create(external_id="site1", name="Site 1", study=study)
-    subject = Subject.objects.create(external_id="subj1", name="Subj 1", site=site)
-    form = Form.objects.create(external_id="form1", name="Form 1", study=study)
-    interval = Interval.objects.create(external_id="int1", name="Int 1", study=study)
-    variable = Variable.objects.create(external_id="var1", name="Var 1", form=form)
-    visit = Visit.objects.create(external_id="vis1", subject=subject, interval=interval)
+    from clinical.models import Provider
+    provider, _ = Provider.objects.get_or_create(name="Test Provider")
+    study = Study.objects.create(external_id="study1", name="Study 1", provider=provider)
+    site = Site.objects.create(external_id="site1", name="Site 1", study=study, provider=provider)
+    subject = Subject.objects.create(external_id="subj1", name="Subj 1", site=site, provider=provider)
+    form = Form.objects.create(external_id="form1", name="Form 1", study=study, provider=provider)
+    interval = Interval.objects.create(external_id="int1", name="Int 1", study=study, provider=provider)
+    variable = Variable.objects.create(external_id="var1", name="Var 1", form=form, provider=provider)
+    visit = Visit.objects.create(external_id="vis1", subject=subject, interval=interval, provider=provider)
 
     return study, site, subject, form, interval, variable, visit
 
@@ -34,7 +36,9 @@ def test_event_generation_and_batching(mock_hierarchy, test_subscription):
     DeliveryAttempt.objects.all().delete()
 
     # Create Record
-    Record.objects.create(external_id="rec1", visit=visit, variable=variable, value="120/80")
+    Record.objects.create(
+        external_id="rec1", visit=visit, variable=variable, value="120/80", provider=variable.provider
+    )
 
     # Check if event was generated
     events = OutboundEvent.objects.filter(event_type="Record", action="CREATE")
@@ -65,7 +69,13 @@ def test_background_worker(mock_hierarchy, test_subscription):
     # Mock the celery delay so we can control when it runs
     with patch("events.tasks.process_delivery_attempt.delay"):
         # Create Record
-        Record.objects.create(external_id="rec_worker", visit=visit, variable=variable, value="Worker test")
+        Record.objects.create(
+            external_id="rec_worker",
+            visit=visit,
+            variable=variable,
+            value="Worker test",
+            provider=variable.provider,
+        )
 
         attempt = DeliveryAttempt.objects.filter(event__event_type="Record").last()
         assert attempt.status == "PENDING"
@@ -96,7 +106,13 @@ def test_subscription_filtering(mock_hierarchy):
     assert DeliveryAttempt.objects.count() == 0
 
     # Creating a Record
-    Record.objects.create(external_id="rec_filter", visit=visit, variable=variable, value="Filter test")
+    Record.objects.create(
+        external_id="rec_filter",
+        visit=visit,
+        variable=variable,
+        value="Filter test",
+        provider=variable.provider,
+    )
 
     # NOW there should be a delivery attempt
     assert DeliveryAttempt.objects.count() == 1

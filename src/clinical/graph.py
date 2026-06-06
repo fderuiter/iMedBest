@@ -18,11 +18,11 @@ def get_provider_dependencies(provider):
 
 def topological_sort_entities(entities, provider):
     dependencies = get_provider_dependencies(provider)
-    
+
     # Create a mapping of id(entity) to entity, and a graph
     # Actually, we can just sort by depths. Let's calculate depths dynamically.
     depths = {}
-    
+
     def get_depth(etype, visited):
         if etype in depths:
             return depths[etype]
@@ -30,21 +30,18 @@ def topological_sort_entities(entities, provider):
             return 0  # Cycle handling
         visited.add(etype)
         deps = dependencies.get(etype, [])
-        if not deps:
-            depth = 1
-        else:
-            depth = 1 + max([get_depth(d, visited) for d in deps] + [0])
+        depth = 1 if not deps else 1 + max([get_depth(d, visited) for d in deps] + [0])
         depths[etype] = depth
         visited.remove(etype)
         return depth
-        
-    for etype in dependencies.keys():
+
+    for etype in dependencies:
         get_depth(etype, set())
-        
+
     for e in entities:
         if e.entity_type not in depths:
             get_depth(e.entity_type, set())
-            
+
     # Sort entities by their computed depth
     # If same depth, maintain original order
     return sorted(entities, key=lambda e: depths.get(e.entity_type, 99))

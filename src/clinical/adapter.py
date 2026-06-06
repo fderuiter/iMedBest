@@ -52,23 +52,23 @@ class MultiVendorAdapter:
 
         parent_fields = self.get_parent_field_for_model(entity_type)
 
-        # Parse datetime if needed
-        clinical_timestamp = mapped_payload.get("clinical_timestamp")
-        if clinical_timestamp and isinstance(clinical_timestamp, str):
-            from django.utils.dateparse import parse_datetime
-
-            clinical_timestamp = parse_datetime(clinical_timestamp)
-
         defaults = {
-            "clinical_timestamp": clinical_timestamp,
-            "source_sequence": mapped_payload.get("source_sequence"),
             "updated_by": request.user,
         }
 
         # Additional scalar fields depending on model
-        for field in ["name", "value", "code", "text"]:
+        for field in ["clinical_timestamp", "source_sequence", "name", "value", "code", "text"]:
             if field in mapped_payload:
-                defaults[field] = mapped_payload[field]
+                val = mapped_payload[field]
+                if field == "clinical_timestamp" and val and isinstance(val, str):
+                    from django.utils.dateparse import parse_datetime
+                    parsed_val = parse_datetime(val)
+                    # Only set clinical_timestamp if parsing succeeded
+                    if parsed_val:
+                        defaults[field] = parsed_val
+                    # If parse_datetime returns None, skip assignment to avoid overwriting existing timestamp
+                else:
+                    defaults[field] = val
 
         # Resolve parents dynamically
         if parent_fields:

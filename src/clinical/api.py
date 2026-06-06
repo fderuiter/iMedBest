@@ -23,6 +23,7 @@ class JWTBearer(HttpBearer):
 
         studyKey = request.headers.get("studyKey") or request.GET.get("studyKey")
         siteKey = request.headers.get("siteKey") or request.GET.get("siteKey")
+        provider_id = request.headers.get("X-Provider")
 
         if not studyKey and hasattr(request, "resolver_match") and request.resolver_match:
             studyKey = request.resolver_match.kwargs.get("studyKey")
@@ -30,11 +31,21 @@ class JWTBearer(HttpBearer):
         if not studyKey and not siteKey:
             raise HttpError(400, "Missing required tenant context identifier: studyKey or siteKey")
 
+        if not provider_id:
+            raise HttpError(400, "Missing valid provider context")
+
         user = decode_jwt_token(token)
         if user:
+            from clinical.models import Provider
+            try:
+                provider = Provider.objects.get(id=provider_id)
+            except (Provider.DoesNotExist, ValueError):
+                raise HttpError(400, "Invalid provider context") from None
+
             request.user = user
             request.studyKey = studyKey
             request.siteKey = siteKey
+            request.provider = provider
             # Assign user_roles needed for export to users authenticated via JWT
             # In a full Entra setup, this would map groups/roles from the token
             # For now, give them "extractor" role so CDISC export isn't totally blocked
@@ -56,6 +67,8 @@ from .models import (
     Subject,
     SyncJob,
     SyncTask,
+    ValidationResult,
+    ValidationRule,
     Variable,
     Visit,
 )
@@ -71,9 +84,21 @@ class IMednetAPIAuth(APIKeyHeader):
         if key and security_key:
             studyKey = request.headers.get("studyKey") or request.GET.get("studyKey")
             siteKey = request.headers.get("siteKey") or request.GET.get("siteKey")
+            provider_id = request.headers.get("X-Provider")
 
             if not studyKey and hasattr(request, "resolver_match") and request.resolver_match:
                 studyKey = request.resolver_match.kwargs.get("studyKey")
+
+            if not provider_id:
+                from ninja.errors import HttpError
+                raise HttpError(400, "Missing valid provider context")
+
+            from clinical.models import Provider
+            try:
+                provider = Provider.objects.get(id=provider_id)
+            except (Provider.DoesNotExist, ValueError):
+                from ninja.errors import HttpError
+                raise HttpError(400, "Invalid provider context") from None
 
             # We don't mandate studyKey for every single request in auth,
             # but if it's missing and we need it, the endpoint will fail or return empty.
@@ -87,6 +112,7 @@ class IMednetAPIAuth(APIKeyHeader):
             request.user = user
             request.studyKey = studyKey
             request.siteKey = siteKey
+            request.provider = provider
             request.user_roles = ["extractor"]
             request.auth_method = "SpecCompliant"
             return key
@@ -98,6 +124,8 @@ def check_write_allowed(request):
 
     if getattr(request, "auth_method", "") == "SpecCompliant" or "/v1/" in request.path:
         raise HttpError(405, "Method Not Allowed")
+    if not getattr(request, "provider", None):
+        raise HttpError(400, "Missing valid provider context")
 
 
 router = Router(auth=[JWTBearer(), IMednetAPIAuth()], by_alias=True)
@@ -526,25 +554,62 @@ def _queue_single_task(request, entity_type: str, payload_obj) -> tuple[int, Any
 
     try:
         with transaction.atomic():
-            job = SyncJob.objects.create(user=request.user, provider=provider, status="COMPLETED")
-            SyncTask.objects.create(
+            job = SyncJob.objects.create(user=request.user, provider=provider, status="PROCESSING")
+            task = SyncTask.objects.create(
                 job=job,
                 entity_type=entity_type,
                 payload=payload_dict,
-                status="COMPLETED",
+                status="PROCESSING",
             )
-            adapter.sync_entity(request, entity_type, payload_dict)
+            result = adapter.sync_entity(request, entity_type, payload_dict)
+            if isinstance(result, tuple) and len(result) == 2 and result[0] == 202:
+                task.status = "BUFFERED"
+                job.status = "PROCESSING" # Job stays processing until orphan resolved
+            else:
+                task.status = "COMPLETED"
+                job.status = "COMPLETED"
+            task.save(update_fields=["status"])
+            job.save(update_fields=["status"])
+
+        from clinical.tasks import run_validation_for_job
+        run_validation_for_job.delay(job.id)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
-        return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync completed", status_url=status_url)
+        return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
     except Exception as e:
         return 400, {"message": f"Sync failed. No data was saved. Error: {e!s}"}
 
 
+
+def mask_pii_for_user(request, data):
+    user = getattr(request, "user", None)
+    can_view = False
+    if user and user.is_authenticated:
+        if user.is_staff or user.is_superuser or user.has_perm("users.view_pii") or user.has_perm("clinical.view_pii"):
+            can_view = True
+        else:
+            # Also check roles if applicable
+            roles = getattr(request, "user_roles", [])
+            if "view_pii" in str(roles).lower():
+                can_view = True
+
+    if can_view:
+        return data
+
+    for obj in data:
+        study = obj.get_study()
+        if study and getattr(study, "pii_masking_enabled", False):
+            for field in getattr(obj, "pii_fields", []):
+                val = getattr(obj, field, None)
+                if val:
+                    setattr(obj, field, "[REDACTED]")
+    return data
+
 # --- Endpoints ---
 
 
-from .graph import topological_sort_entities, get_provider_dependencies
+from .graph import get_provider_dependencies, topological_sort_entities
+
 
 @router.post("/sync-jobs", response={200: SyncJobResponse, 400: dict})
 def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = None):
@@ -564,7 +629,17 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
 
     # Validate entity types
     valid_entity_types = {
-        "Study", "Site", "Form", "Interval", "Subject", "Variable", "Visit", "Record", "Coding", "Query", "RecordRevision"
+        "Study",
+        "Site",
+        "Form",
+        "Interval",
+        "Subject",
+        "Variable",
+        "Visit",
+        "Record",
+        "Coding",
+        "Query",
+        "RecordRevision",
     }
     for entity in sorted_entities:
         if entity.entity_type not in valid_entity_types:
@@ -573,7 +648,7 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
     try:
         with transaction.atomic():
             job = SyncJob.objects.create(user=request.user, provider=provider, status="PENDING")
-            
+
             # Create tasks, and map their temporary IDs to set dependencies
             task_objects = []
             entity_type_to_task = {}
@@ -600,7 +675,7 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
 
         # Trigger celery orchestrator
         from clinical.tasks import orchestrate_sync_job
-        orchestrate_sync_job.delay(job.id, request.user.id)
+        orchestrate_sync_job.delay(job.id)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(
@@ -638,7 +713,8 @@ def sync_study(request, payload: StudySchemaIn):
 
 @router.get("/studies", response=list[StudySchemaOut])
 def list_studies(request, studyKey: str | None = None):
-    return get_accessible_studies(request)
+    qs = get_accessible_studies(request)
+    return mask_pii_for_user(request, list(qs))
 
 
 # L1: Site
@@ -671,7 +747,8 @@ def sync_site(request, payload: SiteSchemaIn):
 
 @router.get("/sites", response=list[SiteSchemaOut])
 def list_sites(request, studyKey: str | None = None):
-    return get_accessible_sites(request).select_related("study")
+    qs = get_accessible_sites(request).select_related("study")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L2: Subject
@@ -704,7 +781,8 @@ def sync_subject(request, payload: SubjectSchemaIn):
 
 @router.get("/subjects", response=list[SubjectSchemaOut])
 def list_subjects(request, studyKey: str | None = None):
-    return get_accessible_subjects(request).select_related("site")
+    qs = get_accessible_subjects(request).select_related("site")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L2: Form
@@ -737,7 +815,8 @@ def sync_form(request, payload: FormSchemaIn):
 
 @router.get("/forms", response=list[FormSchemaOut])
 def list_forms(request, studyKey: str | None = None):
-    return Form.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
+    qs = Form.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L2: Interval
@@ -770,7 +849,8 @@ def sync_interval(request, payload: IntervalSchemaIn):
 
 @router.get("/intervals", response=list[IntervalSchemaOut])
 def list_intervals(request, studyKey: str | None = None):
-    return Interval.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
+    qs = Interval.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L3: Variable
@@ -805,7 +885,8 @@ def sync_variable(request, payload: VariableSchemaIn):
 
 @router.get("/variables", response=list[VariableSchemaOut])
 def list_variables(request, studyKey: str | None = None):
-    return Variable.objects.filter(form__study__in=get_accessible_studies(request)).select_related("form")
+    qs = Variable.objects.filter(form__study__in=get_accessible_studies(request)).select_related("form")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L3: Visit
@@ -848,7 +929,8 @@ def sync_visit(request, payload: VisitSchemaIn):
 
 @router.get("/visits", response=list[VisitSchemaOut])
 def list_visits(request, studyKey: str | None = None):
-    return Visit.objects.filter(subject__in=get_accessible_subjects(request)).select_related("subject", "interval")
+    qs = Visit.objects.filter(subject__in=get_accessible_subjects(request)).select_related("subject", "interval")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L4: Record
@@ -935,7 +1017,8 @@ def sync_coding(request, payload: CodingSchemaIn):
 
 @router.get("/codings", response=list[CodingSchemaOut])
 def list_codings(request, studyKey: str | None = None):
-    return Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
+    qs = Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
+    return mask_pii_for_user(request, list(qs))
 
 
 # L4: Query
@@ -978,6 +1061,11 @@ def sync_query(request, payload: QuerySchemaIn):
         query.text = payload.text
         query.updated_by = request.user
         query.save()
+
+        # Bi-directional state sync for validation
+        if query.status == "RESOLVED":
+            from clinical.models import ValidationResult
+            ValidationResult.objects.filter(query=query).update(passed=True)
     else:
         query = Query.objects.create(
             external_id=payload.external_id,
@@ -997,7 +1085,8 @@ def sync_query(request, payload: QuerySchemaIn):
 
 @router.get("/queries", response=list[QuerySchemaOut])
 def list_queries(request, studyKey: str | None = None):
-    return Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
+    qs = Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
+    return mask_pii_for_user(request, list(qs))
 
 
 @router.patch("/queries/{query_id}", response=QuerySchemaOut)
@@ -1009,6 +1098,10 @@ def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str |
     query.sync_status = "PENDING"
     query.save(update_fields=["status", "previous_status", "sync_status", "updated_at"])
 
+    if query.status == "RESOLVED":
+        from clinical.models import ValidationResult
+        ValidationResult.objects.filter(query=query).update(passed=True)
+
     from django.core.cache import cache
     from django.utils import timezone
 
@@ -1019,7 +1112,7 @@ def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str |
 
     sync_query_upstream.delay(query.id)
 
-    return query
+    return mask_pii_for_user(request, [query])[0]
 
 
 # L4: RecordRevision
@@ -1139,7 +1232,27 @@ def _reprocess_orphan(orphan):
     req = type("DummyRequest", (object,), {"user": orphan.user, "provider": orphan.provider, "user_roles": ["cdisc"]})()
 
     adapter = MultiVendorAdapter(orphan.provider)
-    adapter.sync_entity(req, orphan.entity_type, orphan.payload)
+    result = adapter.sync_entity(req, orphan.entity_type, orphan.payload)
+
+    if not (isinstance(result, tuple) and len(result) == 2 and result[0] == 202):
+        from .models import SyncTask
+        from audit.models import AuditLog
+        tasks = SyncTask.objects.filter(status="BUFFERED", entity_type=orphan.entity_type)
+        for task in tasks:
+            if task.payload == orphan.payload:
+                task.status = "COMPLETED"
+                task.save(update_fields=["status"])
+                AuditLog.objects.create(
+                    action="UPDATE",
+                    model_name="SyncTask",
+                    object_id=str(task.id),
+                    user=orphan.user,
+                    changes={
+                        "status": ["BUFFERED", "COMPLETED"],
+                        "resolving_parent_record": orphan.missing_parent_id,
+                    }
+                )
+                logger.info("Transitioned buffered task %s to COMPLETED via parent %s", task.id, orphan.missing_parent_id)
 
     orphan.delete()
 
@@ -1317,3 +1430,74 @@ class StripSyncMetadataMiddleware:
                 except Exception:  # noqa: S110
                     pass
         return response
+
+@router.get("/validation/dashboard-summary")
+def get_validation_dashboard(request, studyKey: str | None = None):
+    # Filter by provider to prevent cross-tenant data leaks
+    provider = getattr(request, "provider", None)
+    if not provider:
+        from ninja.errors import HttpError
+        raise HttpError(400, "Missing provider context")
+
+    # Start with tenant-scoped queryset filtering by provider via job
+    qs = ValidationResult.objects.filter(job__provider=provider)
+
+    # Further filter by study if provided
+    if studyKey:
+        # Filter validation results to those whose job's records/entities belong to the specified study
+        # Since ValidationResult -> job -> entities can span multiple models,
+        # we'll need to find a path. For now, filter by checking if any record in the job belongs to that study.
+        # A more robust approach would be to add a study field to SyncJob or ValidationResult.
+        # For this fix, we'll filter by checking records via the query relationship
+        qs = qs.filter(query__record__visit__subject__site__study__key=studyKey)
+
+    total_checks = qs.count()
+    if total_checks == 0:
+        return {
+            "passed_percentage": 100.0,
+            "total_checks": 0,
+            "failed_checks": 0,
+            "passed_checks": 0
+        }
+    passed_checks = qs.filter(passed=True).count()
+    failed_checks = total_checks - passed_checks
+    passed_percentage = (passed_checks / total_checks) * 100.0
+
+    return {
+        "passed_percentage": round(passed_percentage, 2),
+        "total_checks": total_checks,
+        "failed_checks": failed_checks,
+        "passed_checks": passed_checks
+    }
+
+class ValidationRuleSchemaIn(ModelSchema):
+    class Meta:
+        model = ValidationRule
+        fields = ["name", "description", "rule_dsl", "is_active", "version"]
+
+class ValidationRuleSchemaOut(ModelSchema):
+    class Meta:
+        model = ValidationRule
+        fields = ["id", "name", "description", "rule_dsl", "is_active", "version", "created_at", "updated_at"]
+
+@router.post("/validation-rules", response=ValidationRuleSchemaOut)
+def create_validation_rule(request, payload: ValidationRuleSchemaIn):
+    # Enforce write protection to prevent bypass via SpecCompliant auth
+    check_write_allowed(request)
+
+    if not (request.user.is_staff or request.user.is_superuser):
+        from ninja.errors import HttpError
+        raise HttpError(403, "Admin access required to create validation rules.")
+
+    rule = ValidationRule.objects.create(
+        name=payload.name,
+        description=payload.description,
+        rule_dsl=payload.rule_dsl,
+        is_active=payload.is_active,
+        version=payload.version
+    )
+    return rule
+
+@router.get("/validation-rules", response=list[ValidationRuleSchemaOut])
+def list_validation_rules(request):
+    return ValidationRule.objects.all()

@@ -8,10 +8,12 @@ from .models import Record, SyncJob
 
 
 def get_auth_headers(study_key="test-study"):
+    from clinical.models import Provider
+    provider, _ = Provider.objects.get_or_create(name="Test Provider")
     User = get_user_model()
     user, _ = User.objects.get_or_create(username="test_user", is_staff=True)
     token = create_jwt_token(user)
-    return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": study_key}
+    return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": study_key, "HTTP_X_PROVIDER": str(provider.id)}
 
 
 def process_all_jobs():
@@ -26,7 +28,7 @@ def process_all_jobs():
             break
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_multi_level_data_import(client):
     headers = get_auth_headers("study-1")
     # Level 1
@@ -227,7 +229,7 @@ def test_longitudinal_reconstruction(client):
     assert values == ["85", "90"]
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_job_endpoint(client):
     headers = get_auth_headers("study-async")
     from clinical.models import SyncJob
@@ -261,7 +263,7 @@ def test_sync_job_endpoint(client):
     assert job.tasks.count() == 2
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_job_atomic_failure(client):
     headers = get_auth_headers("study-atomic")
 

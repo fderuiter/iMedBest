@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
-def process_sync_task(self, task_id, user_id):
+def process_sync_task(self, task_id):
     task = SyncTask.objects.get(id=task_id)
     try:
         task.status = "PROCESSING"
@@ -32,13 +32,14 @@ def process_sync_task(self, task_id, user_id):
         # Queue child tasks if any are waiting for this parent
         child_tasks = SyncTask.objects.filter(parent_task_id=task.id, status="PENDING")
         for child in child_tasks:
-            process_sync_task.delay(child.id, user_id)
+            process_sync_task.delay(child.id)
 
         # Check if job is completed
         job = task.job
         if not job.tasks.exclude(status="COMPLETED").exists():
             job.status = "COMPLETED"
             job.save(update_fields=["status"])
+            run_validation_for_job.delay(job.id)
 
     except Exception as exc:
         task.error_message = str(exc)
@@ -57,13 +58,13 @@ def process_sync_task(self, task_id, user_id):
 
 
 @shared_task(acks_late=True, reject_on_worker_lost=True)
-def orchestrate_sync_job(job_id, user_id):
+def orchestrate_sync_job(job_id):
     job = SyncJob.objects.get(id=job_id)
     job.status = "PROCESSING"
     job.save(update_fields=["status"])
 
     try:
-        process_next_ready_tasks.delay(job_id, user_id)
+        process_next_ready_tasks.delay(job_id)
     except Exception as e:
         job.status = "FAILED"
         job.error_message = str(e)
@@ -71,16 +72,18 @@ def orchestrate_sync_job(job_id, user_id):
 
 
 @shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
-def process_next_ready_tasks(self, job_id, user_id):
+def process_next_ready_tasks(self, job_id):
     job = SyncJob.objects.get(id=job_id)
     if job.status == "FAILED":
         return
 
     pending_tasks = SyncTask.objects.filter(job=job, status="PENDING")
     if not pending_tasks.exists():
-        if not SyncTask.objects.filter(job=job, status="PROCESSING").exists():
+        # Check that no tasks are PROCESSING or FAILED before marking job as COMPLETED
+        if not SyncTask.objects.filter(job=job, status__in=["PROCESSING", "FAILED"]).exists():
             job.status = "COMPLETED"
             job.save(update_fields=["status"])
+            run_validation_for_job.delay(job.id)
         return
 
     started_any = False
@@ -90,7 +93,7 @@ def process_next_ready_tasks(self, job_id, user_id):
         if all(d.status == "COMPLETED" for d in deps):
             task.status = "PROCESSING"
             task.save(update_fields=["status"])
-            process_single_task.delay(task.id, user_id)
+            process_single_task.delay(task.id)
             started_any = True
 
     if not started_any:
@@ -103,17 +106,17 @@ def process_next_ready_tasks(self, job_id, user_id):
                 task.error_message = "Dependency failed"
                 task.save(update_fields=["status", "error_message"])
                 failed_dependencies = True
-        
+
         if failed_dependencies:
             # Trigger again to process downstream failures or finish job
-            process_next_ready_tasks.apply_async((job_id, user_id), countdown=1)
+            process_next_ready_tasks.apply_async((job_id,), countdown=1)
         else:
             # Wait for currently PROCESSING tasks to finish
-            check_level_completion.apply_async((job_id, user_id), countdown=2)
+            check_level_completion.apply_async((job_id,), countdown=2)
 
 
 @shared_task(bind=True, max_retries=5, acks_late=True, reject_on_worker_lost=True)
-def process_single_task(self, task_id, user_id):
+def process_single_task(self, task_id):
     task = SyncTask.objects.get(id=task_id)
     if task.status != "PENDING":
         return
@@ -122,72 +125,30 @@ def process_single_task(self, task_id, user_id):
     task.save(update_fields=["status"])
 
     try:
-        from users.models import User
+        from audit.middleware import get_current_request
+        from clinical.adapter import MultiVendorAdapter
 
-        from .api import (
-            CodingSchemaIn,
-            FormSchemaIn,
-            IntervalSchemaIn,
-            QuerySchemaIn,
-            RecordRevisionSchemaIn,
-            RecordSchemaIn,
-            SiteSchemaIn,
-            StudySchemaIn,
-            SubjectSchemaIn,
-            VariableSchemaIn,
-            VisitSchemaIn,
-            sync_coding,
-            sync_form,
-            sync_interval,
-            sync_query,
-            sync_record,
-            sync_revision,
-            sync_site,
-            sync_study,
-            sync_subject,
-            sync_variable,
-            sync_visit,
-        )
+        request = get_current_request()
+        if request is None:
+            from django.contrib.auth.models import AnonymousUser
 
-        user = User.objects.get(id=user_id)
+            class _SystemRequest:
+                user = AnonymousUser()
+                user_roles: list = []
+                provider = task.job.provider
+                META: dict = {}
 
-        # Mock request object
-        class MockRequest:
-            def __init__(self, user):
-                self.user = user
-                self.META = {}
-
-        request = MockRequest(user)
+            request = _SystemRequest()
 
         payload = task.payload
         entity_type = task.entity_type
 
-        if entity_type == "Study":
-            sync_study(request, StudySchemaIn(**payload))
-        elif entity_type == "Site":
-            sync_site(request, SiteSchemaIn(**payload))
-        elif entity_type == "Subject":
-            sync_subject(request, SubjectSchemaIn(**payload))
-        elif entity_type == "Form":
-            sync_form(request, FormSchemaIn(**payload))
-        elif entity_type == "Interval":
-            sync_interval(request, IntervalSchemaIn(**payload))
-        elif entity_type == "Variable":
-            sync_variable(request, VariableSchemaIn(**payload))
-        elif entity_type == "Visit":
-            sync_visit(request, VisitSchemaIn(**payload))
-        elif entity_type == "Record":
-            sync_record(request, RecordSchemaIn(**payload))
-        elif entity_type == "Coding":
-            sync_coding(request, CodingSchemaIn(**payload))
-        elif entity_type == "Query":
-            sync_query(request, QuerySchemaIn(**payload))
-        elif entity_type == "RecordRevision":
-            sync_revision(request, RecordRevisionSchemaIn(**payload))
+        adapter = MultiVendorAdapter(task.job.provider)
+        adapter.sync_entity(request, entity_type, payload)
 
         task.status = "COMPLETED"
         task.save(update_fields=["status"])
-        process_next_ready_tasks.delay(task.job_id, user_id)
+        process_next_ready_tasks.delay(task.job_id)
 
     except Exception as exc:
         task.error_message = str(exc)
@@ -204,18 +165,18 @@ def process_single_task(self, task_id, user_id):
 
 
 @shared_task(acks_late=True, reject_on_worker_lost=True)
-def check_level_completion(job_id, user_id):
+def check_level_completion(job_id):
     job = SyncJob.objects.get(id=job_id)
     if job.status == "FAILED":
         return  # Stop processing
 
     if SyncTask.objects.filter(job=job, status="PROCESSING").exists():
         # Still processing, check again later
-        check_level_completion.apply_async((job_id, user_id), countdown=2)
+        check_level_completion.apply_async((job_id,), countdown=2)
         return
 
     # Call process_next_ready_tasks to advance the job
-    process_next_ready_tasks.delay(job_id, user_id)
+    process_next_ready_tasks.delay(job_id)
 
 
 @shared_task
@@ -391,3 +352,9 @@ def export_cdisc_task(job_id):
             job.status = "FAILED"
             job.error_message = str(e)
             job.save(update_fields=["status", "error_message"])
+
+
+@shared_task
+def run_validation_for_job(job_id):
+    from clinical.validation.engine import execute_validation_for_job
+    execute_validation_for_job(job_id)

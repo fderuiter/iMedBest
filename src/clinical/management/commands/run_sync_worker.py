@@ -55,7 +55,7 @@ class Command(BaseCommand):
             if all(d.status == "COMPLETED" for d in deps):
                 task_to_run = task
                 break
-                
+
         if not task_to_run:
             # Check for failed dependencies
             failed_found = False
@@ -66,10 +66,8 @@ class Command(BaseCommand):
                     task.error_message = "Dependency failed"
                     task.save(update_fields=["status", "error_message"])
                     failed_found = True
-            
-            if failed_found:
-                return True
-            return False
+
+            return bool(failed_found)
 
         task = task_to_run
         updated = SyncTask.objects.filter(id=task.id, status="PENDING").update(status="PROCESSING")
@@ -79,8 +77,11 @@ class Command(BaseCommand):
         task.refresh_from_db()
 
         try:
-            self.execute_task(task)
-            task.status = "COMPLETED"
+            result = self.execute_task(task)
+            if isinstance(result, tuple) and len(result) == 2 and result[0] == 202:
+                task.status = "BUFFERED"
+            else:
+                task.status = "COMPLETED"
             task.save(update_fields=["status"])
         except Exception as e:
             logger.exception(f"Error processing task {task.id}: {e}")
@@ -96,17 +97,12 @@ class Command(BaseCommand):
 
     def execute_task(self, task):
         from clinical.adapter import MultiVendorAdapter
-
-        class MockRequest:
-            def __init__(self, user, provider):
-                self.user = user
-                self.user_roles = ["cdisc"]
-                self.provider = provider
-                self.META = {}
+        from clinical.utils import MockRequest
 
         request = MockRequest(task.job.user, task.job.provider)
         payload = task.payload
         entity_type = task.entity_type
 
         adapter = MultiVendorAdapter(task.job.provider)
-        adapter.sync_entity(request, entity_type, payload)
+        return adapter.sync_entity(request, entity_type, payload)
+

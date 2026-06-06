@@ -35,6 +35,7 @@ class ClinicalEntityQuerySet(models.QuerySet):
     def hard_delete(self):
         return super().delete()
 
+
     def restore(self):
         for obj in self:
             obj.restore()
@@ -51,8 +52,9 @@ class AllManager(models.Manager):
 
 
 class ClinicalEntity(models.Model):
+    pii_fields = []
     external_id = models.CharField(max_length=255)
-    provider = models.ForeignKey("clinical.Provider", on_delete=models.PROTECT, null=True, blank=True)
+    provider = models.ForeignKey("clinical.Provider", on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
@@ -73,9 +75,11 @@ class ClinicalEntity(models.Model):
     objects = ActiveManager()
     all_objects = AllManager()
 
+
     class Meta:
         abstract = True
         constraints: ClassVar[list] = [
+
             models.UniqueConstraint(
                 fields=["provider", "external_id"], name="%(app_label)s_%(class)s_unique_provider_external_id"
             )
@@ -96,6 +100,19 @@ class ClinicalEntity(models.Model):
                         filter_kwargs = {related_object.field.name: self}
                         for child in related_model.all_objects.filter(**filter_kwargs, is_deleted=False):
                             child.delete(deleted_at=self.deleted_at)
+
+
+    def get_study(self):
+        if isinstance(self, Study):
+            return self
+        if isinstance(self, (Site, Form, Interval)):
+            return self.study
+        if isinstance(self, Subject):
+            return self.site.study
+        if isinstance(self, Variable):
+            return self.form.study
+        subj = self.get_subject() if hasattr(self, "get_subject") else None
+        return subj.site.study if subj else None
 
     def restore(self):
         if self.is_deleted:
@@ -145,11 +162,18 @@ class ClinicalEntity(models.Model):
 
 
 # Level 1
+
 class Study(ClinicalEntity):
     name = models.CharField(max_length=255)
     pii_masking_enabled = models.BooleanField(default=False)
 
+    class Meta:
+        permissions = [
+            ("view_pii", "Can view unmasked PII"),
+        ]
+
     def __str__(self):
+
         return self.name
 
 
@@ -165,6 +189,7 @@ class Site(ClinicalEntity):
 class Subject(ClinicalEntity):
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="subjects")
     name = models.CharField(max_length=255, blank=True)
+    pii_fields = ["name"]
 
     @property
     def baseline_date(self):
@@ -220,6 +245,7 @@ class Record(ClinicalEntity):
     visit = models.ForeignKey(Visit, on_delete=models.CASCADE, related_name="records")
     variable = models.ForeignKey(Variable, on_delete=models.CASCADE, related_name="records")
     value = models.TextField(blank=True)
+    pii_fields = ["value"]
 
     def get_subject(self):
         return self.visit.subject
@@ -248,23 +274,39 @@ class Query(ClinicalEntity):
 class RecordRevision(ClinicalEntity):
     record = models.ForeignKey(Record, on_delete=models.CASCADE, related_name="revisions")
     value = models.TextField()
+    pii_fields = ["value"]
 
     def get_subject(self):
         return self.record.visit.subject
 
 
+
 @receiver(post_save, sender=Record)
 def create_record_revision(sender, instance, created, **kwargs):
+    value_to_save = instance.value
+    study = instance.get_study()
+    should_mask = (
+        study is not None
+        and getattr(study, "pii_masking_enabled", False)
+        and hasattr(instance, "pii_fields")
+        and "value" in instance.pii_fields
+        and value_to_save
+    )
+    if should_mask:
+        value_to_save = "[REDACTED]"
+
     RecordRevision.objects.create(
         external_id=str(uuid.uuid4()),
+        provider=instance.provider,
         record=instance,
-        value=instance.value,
+        value=value_to_save,
         clinical_timestamp=instance.clinical_timestamp,
         source_sequence=instance.source_sequence,
         offset_days=instance.offset_days,
         created_by=instance.updated_by,
         updated_by=instance.updated_by,
     )
+
 
 
 @receiver(post_save, sender=Visit)
@@ -277,7 +319,7 @@ def trigger_longitudinal_reconstruction(sender, instance, created, update_fields
 
 
 class BufferedOrphan(models.Model):
-    provider = models.ForeignKey("clinical.Provider", on_delete=models.CASCADE, null=True, blank=True)
+    provider = models.ForeignKey("clinical.Provider", on_delete=models.CASCADE)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     entity_type = models.CharField(max_length=50)
     missing_parent_id = models.CharField(max_length=255)
@@ -291,7 +333,7 @@ class BufferedOrphan(models.Model):
 
 
 class SyncJob(models.Model):
-    provider = models.ForeignKey("clinical.Provider", on_delete=models.CASCADE, null=True, blank=True)
+    provider = models.ForeignKey("clinical.Provider", on_delete=models.CASCADE)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     status = models.CharField(
         max_length=50,
@@ -324,6 +366,7 @@ class SyncTask(models.Model):
         choices=[
             ("PENDING", "Pending"),
             ("PROCESSING", "Processing"),
+            ("BUFFERED", "Buffered"),
             ("COMPLETED", "Completed"),
             ("FAILED", "Failed"),
         ],
@@ -345,3 +388,33 @@ class ExportJob(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(null=True, blank=True)
+
+
+class ValidationRule(models.Model):
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    rule_dsl = models.JSONField(help_text="JSON DSL for defining validation logic")
+    is_active = models.BooleanField(default=True)
+    version = models.IntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} (v{self.version})"
+
+
+class ValidationResult(models.Model):
+    rule = models.ForeignKey(ValidationRule, on_delete=models.CASCADE, related_name="results")
+    job = models.ForeignKey(
+        SyncJob, on_delete=models.CASCADE, null=True, blank=True, related_name="validation_results"
+    )
+    passed = models.BooleanField(default=True)
+    error_message = models.TextField(blank=True, null=True)
+    query = models.ForeignKey(
+        Query, on_delete=models.SET_NULL, null=True, blank=True, related_name="validation_results"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        status = "Passed" if self.passed else "Failed"
+        return f"Result for {self.rule.name}: {status}"

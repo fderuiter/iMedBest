@@ -49,3 +49,27 @@ def test_storage_adapter_rollback():
         gc.collect()
         # Verify it does not leave orphan stages
         assert len(os.listdir(staging_dir)) == 0
+
+@pytest.mark.django_db(transaction=True)
+def test_storage_adapter_compliance_routing():
+    adapter = get_storage_adapter()
+    
+    with transaction.atomic():
+        phi_path = adapter.save("phi_test.txt", b"PHI Data", namespace="phi", contains_phi=True)
+        global_path = adapter.save("global_test.txt", b"Non PHI", namespace="global", contains_phi=False)
+        
+    phi_abs = adapter.get_absolute_path(phi_path, contains_phi=True)
+    global_abs = adapter.get_absolute_path(global_path, contains_phi=False)
+    
+    # Assert PHI is NOT in primary
+    assert not adapter.primary_adapter.exists(phi_path)
+    # Assert PHI IS in BAA
+    assert adapter.baa_adapter.exists(phi_path)
+    
+    # Assert global IS in primary
+    assert adapter.primary_adapter.exists(global_path)
+    # Assert global is NOT in BAA
+    assert not adapter.baa_adapter.exists(global_path)
+
+    os.remove(phi_abs)
+    os.remove(global_abs)

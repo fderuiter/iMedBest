@@ -328,8 +328,9 @@ def export_cdisc_task(job_id):
         adapter = get_storage_adapter()
         try:
             with transaction.atomic():
+                contains_phi = getattr(study, "contains_phi", False)
                 with open(tmp_zip_path, "rb") as f:
-                    final_path = adapter.save(f"export_{job_id}.zip", f, namespace="exports")
+                    final_path = adapter.save(f"export_{job_id}.zip", f, namespace="exports", contains_phi=contains_phi)
 
                 job.file_path = final_path
                 job.status = "COMPLETED"

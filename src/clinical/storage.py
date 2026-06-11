@@ -8,6 +8,13 @@ from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
+try:
+    from audit.middleware import get_current_request
+    from audit.models import AuditLog
+except ImportError:
+    get_current_request = None
+    AuditLog = None
+
 
 class RollbackCleanup:
     def __init__(self, temp_path):
@@ -102,8 +109,79 @@ class UnifiedStorageAdapter:
         return open(full_path, mode)  # noqa: SIM115
 
 
-storage_adapter = UnifiedStorageAdapter()
+class ComplianceStorageProxy:
+    def __init__(self, primary_adapter, baa_adapter):
+        self.primary_adapter = primary_adapter
+        self.baa_adapter = baa_adapter
 
+    @property
+    def base_dir(self):
+        return self.primary_adapter.base_dir
+
+    def _log_audit(self, action, path):
+        logger.info(f"AUDIT LOG: PHI-tagged file operation ({action}) for {path}")
+        if AuditLog and get_current_request:
+            try:
+                request = get_current_request()
+                user = getattr(request, "user", None) if request else None
+                if user and not user.is_authenticated:
+                    user = None
+
+                ip_address = None
+                user_agent = None
+                if request:
+                    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+                    if x_forwarded_for:
+                        ip_address = x_forwarded_for.split(",")[0]
+                    else:
+                        ip_address = request.META.get("REMOTE_ADDR")
+                    user_agent = request.META.get("HTTP_USER_AGENT")
+
+                AuditLog.objects.create(
+                    action="SECURITY",
+                    model_name="ComplianceStorage",
+                    object_id=path,
+                    changes={"file_operation": action},
+                    user=user,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+            except Exception as e:
+                logger.error(f"Failed to create audit log for {path}: {e}")
+
+    def save(self, name, content, namespace="", contains_phi=False):
+        if contains_phi:
+            self._log_audit("SAVE", os.path.join(namespace, name) if namespace else name)
+            return self.baa_adapter.save(name, content, namespace)
+        return self.primary_adapter.save(name, content, namespace)
+
+    def exists(self, path, contains_phi=None):
+        if contains_phi is True:
+            return self.baa_adapter.exists(path)
+        if contains_phi is False:
+            return self.primary_adapter.exists(path)
+        return self.baa_adapter.exists(path) or self.primary_adapter.exists(path)
+
+    def get_absolute_path(self, path, contains_phi=None):
+        if contains_phi is True or (contains_phi is None and self.baa_adapter.exists(path)):
+            return self.baa_adapter.get_absolute_path(path)
+        return self.primary_adapter.get_absolute_path(path)
+
+    def open(self, path, mode="rb", contains_phi=None):
+        if contains_phi is True or (contains_phi is None and self.baa_adapter.exists(path)):
+            self._log_audit(f"OPEN({mode})", path)
+            return self.baa_adapter.open(path, mode)
+        return self.primary_adapter.open(path, mode)
+
+
+root_dir = str(getattr(settings, "ROOT_DIR", tempfile.gettempdir()))
+media_root = getattr(settings, "MEDIA_ROOT", os.path.join(root_dir, "media"))
+baa_root = getattr(settings, "BAA_ROOT", os.path.join(root_dir, "baa_vault"))
+
+_primary_adapter = UnifiedStorageAdapter(base_dir=media_root)
+_baa_adapter = UnifiedStorageAdapter(base_dir=baa_root)
+
+storage_adapter = ComplianceStorageProxy(_primary_adapter, _baa_adapter)
 
 def get_storage_adapter():
     return storage_adapter

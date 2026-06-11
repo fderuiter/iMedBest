@@ -71,6 +71,10 @@ class ClinicalEntity(models.Model):
 
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    contains_phi = models.BooleanField(
+        default=False, 
+        help_text="Indicates if this entity contains Protected Health Information (PHI)."
+    )
 
     objects = ActiveManager()
     all_objects = AllManager()

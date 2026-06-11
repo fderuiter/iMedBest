@@ -22,6 +22,9 @@ class Provider(models.Model):
     schema_mapping = models.JSONField(
         default=dict, blank=True, help_text="Maps external data fields to internal clinical attributes."
     )
+    metadata_mapping = models.JSONField(
+        default=dict, blank=True, help_text="Maps hierarchical relationships and tags into flattened metadata."
+    )
 
     def __str__(self):
         return self.name
@@ -68,6 +71,7 @@ class ClinicalEntity(models.Model):
     clinical_timestamp = models.DateTimeField(null=True, blank=True)
     source_sequence = models.IntegerField(null=True, blank=True)
     offset_days = models.IntegerField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
 
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)

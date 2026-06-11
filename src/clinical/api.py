@@ -182,6 +182,7 @@ class StudySchemaOut(ModelSchema):
             "updated_at",
             "created_by",
             "updated_by",
+            "metadata",
         ]
 
 
@@ -208,6 +209,7 @@ class SiteSchemaOut(ModelSchema):
             "updated_at",
             "created_by",
             "updated_by",
+            "metadata",
         ]
 
 
@@ -234,6 +236,7 @@ class SubjectSchemaOut(ModelSchema):
             "updated_at",
             "created_by",
             "updated_by",
+            "metadata",
         ]
 
 
@@ -260,6 +263,7 @@ class FormSchemaOut(ModelSchema):
             "updated_at",
             "created_by",
             "updated_by",
+            "metadata",
         ]
 
 
@@ -286,6 +290,7 @@ class IntervalSchemaOut(ModelSchema):
             "updated_at",
             "created_by",
             "updated_by",
+            "metadata",
         ]
 
 
@@ -312,6 +317,7 @@ class VariableSchemaOut(ModelSchema):
             "updated_at",
             "created_by",
             "updated_by",
+            "metadata",
         ]
 
 
@@ -339,6 +345,7 @@ class VisitSchemaOut(ModelSchema):
             "updated_at",
             "created_by",
             "updated_by",
+            "metadata",
         ]
 
 
@@ -367,6 +374,7 @@ class RecordSchemaOut(ModelSchema):
             "updated_at",
             "created_by",
             "updated_by",
+            "metadata",
         ]
 
 
@@ -393,6 +401,7 @@ class CodingSchemaOut(ModelSchema):
             "updated_at",
             "created_by",
             "updated_by",
+            "metadata",
         ]
 
 
@@ -430,6 +439,7 @@ class QuerySchemaOut(ModelSchema):
             "updated_at",
             "created_by",
             "updated_by",
+            "metadata",
         ]
 
 
@@ -456,6 +466,7 @@ class RecordRevisionSchemaOut(ModelSchema):
             "updated_at",
             "created_by",
             "updated_by",
+            "metadata",
         ]
 
 
@@ -712,8 +723,10 @@ def sync_study(request, payload: StudySchemaIn):
 
 
 @router.get("/studies", response=list[StudySchemaOut])
-def list_studies(request, studyKey: str | None = None):
+def list_studies(request, studyKey: str | None = None, parent_id: str | None = None):
     qs = get_accessible_studies(request)
+    if parent_id:
+        qs = qs.filter(metadata__parent_id=parent_id)
     return mask_pii_for_user(request, list(qs))
 
 
@@ -746,8 +759,10 @@ def sync_site(request, payload: SiteSchemaIn):
 
 
 @router.get("/sites", response=list[SiteSchemaOut])
-def list_sites(request, studyKey: str | None = None):
+def list_sites(request, studyKey: str | None = None, parent_id: str | None = None):
     qs = get_accessible_sites(request).select_related("study")
+    if parent_id:
+        qs = qs.filter(metadata__parent_id=parent_id)
     return mask_pii_for_user(request, list(qs))
 
 
@@ -780,8 +795,10 @@ def sync_subject(request, payload: SubjectSchemaIn):
 
 
 @router.get("/subjects", response=list[SubjectSchemaOut])
-def list_subjects(request, studyKey: str | None = None):
+def list_subjects(request, studyKey: str | None = None, parent_id: str | None = None):
     qs = get_accessible_subjects(request).select_related("site")
+    if parent_id:
+        qs = qs.filter(metadata__parent_id=parent_id)
     return mask_pii_for_user(request, list(qs))
 
 
@@ -814,8 +831,10 @@ def sync_form(request, payload: FormSchemaIn):
 
 
 @router.get("/forms", response=list[FormSchemaOut])
-def list_forms(request, studyKey: str | None = None):
+def list_forms(request, studyKey: str | None = None, parent_id: str | None = None):
     qs = Form.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
+    if parent_id:
+        qs = qs.filter(metadata__parent_id=parent_id)
     return mask_pii_for_user(request, list(qs))
 
 
@@ -848,8 +867,10 @@ def sync_interval(request, payload: IntervalSchemaIn):
 
 
 @router.get("/intervals", response=list[IntervalSchemaOut])
-def list_intervals(request, studyKey: str | None = None):
+def list_intervals(request, studyKey: str | None = None, parent_id: str | None = None):
     qs = Interval.objects.filter(study__in=get_accessible_studies(request)).select_related("study")
+    if parent_id:
+        qs = qs.filter(metadata__parent_id=parent_id)
     return mask_pii_for_user(request, list(qs))
 
 
@@ -884,8 +905,10 @@ def sync_variable(request, payload: VariableSchemaIn):
 
 
 @router.get("/variables", response=list[VariableSchemaOut])
-def list_variables(request, studyKey: str | None = None):
+def list_variables(request, studyKey: str | None = None, parent_id: str | None = None):
     qs = Variable.objects.filter(form__study__in=get_accessible_studies(request)).select_related("form")
+    if parent_id:
+        qs = qs.filter(metadata__parent_id=parent_id)
     return mask_pii_for_user(request, list(qs))
 
 
@@ -928,8 +951,10 @@ def sync_visit(request, payload: VisitSchemaIn):
 
 
 @router.get("/visits", response=list[VisitSchemaOut])
-def list_visits(request, studyKey: str | None = None):
+def list_visits(request, studyKey: str | None = None, parent_id: str | None = None):
     qs = Visit.objects.filter(subject__in=get_accessible_subjects(request)).select_related("subject", "interval")
+    if parent_id:
+        qs = qs.filter(metadata__parent_id=parent_id)
     return mask_pii_for_user(request, list(qs))
 
 
@@ -977,10 +1002,13 @@ def sync_record(request, payload: RecordSchemaIn):
 
 
 @router.get("/records", response=list[RecordSchemaOut])
-def list_records(request, studyKey: str | None = None):
-    return Record.objects.filter(visit__subject__in=get_accessible_subjects(request)).select_related(
+def list_records(request, studyKey: str | None = None, parent_id: str | None = None):
+    qs = Record.objects.filter(visit__subject__in=get_accessible_subjects(request)).select_related(
         "visit", "variable"
     )
+    if parent_id:
+        qs = qs.filter(metadata__parent_id=parent_id)
+    return qs
 
 
 # L4: Coding
@@ -1016,8 +1044,10 @@ def sync_coding(request, payload: CodingSchemaIn):
 
 
 @router.get("/codings", response=list[CodingSchemaOut])
-def list_codings(request, studyKey: str | None = None):
+def list_codings(request, studyKey: str | None = None, parent_id: str | None = None):
     qs = Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
+    if parent_id:
+        qs = qs.filter(metadata__parent_id=parent_id)
     return mask_pii_for_user(request, list(qs))
 
 
@@ -1084,8 +1114,10 @@ def sync_query(request, payload: QuerySchemaIn):
 
 
 @router.get("/queries", response=list[QuerySchemaOut])
-def list_queries(request, studyKey: str | None = None):
+def list_queries(request, studyKey: str | None = None, parent_id: str | None = None):
     qs = Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related("record")
+    if parent_id:
+        qs = qs.filter(metadata__parent_id=parent_id)
     return mask_pii_for_user(request, list(qs))
 
 
@@ -1151,10 +1183,13 @@ def sync_revision(request, payload: RecordRevisionSchemaIn):
 
 
 @router.get("/revisions", response=list[RecordRevisionSchemaOut])
-def list_revisions(request, studyKey: str | None = None):
-    return RecordRevision.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related(
+def list_revisions(request, studyKey: str | None = None, parent_id: str | None = None):
+    qs = RecordRevision.objects.filter(record__visit__subject__in=get_accessible_subjects(request)).select_related(
         "record"
     )
+    if parent_id:
+        qs = qs.filter(metadata__parent_id=parent_id)
+    return qs
 
 
 @router.get("/export/cdisc")

@@ -9,6 +9,7 @@ class MultiVendorAdapter:
         # Defaults if mappings are empty
         self.hierarchy_mapping = provider.hierarchy_mapping if provider and provider.hierarchy_mapping else {}
         self.schema_mapping = provider.schema_mapping if provider and provider.schema_mapping else {}
+        self.metadata_mapping = provider.metadata_mapping if provider and provider.metadata_mapping else {}
 
     def resolve_entity_type(self, raw_type):
         """Map external entity type to internal model name."""
@@ -70,6 +71,21 @@ class MultiVendorAdapter:
                 else:
                     defaults[field] = val
 
+        # Metadata mapping for hierarchical relationships
+        metadata_config = self.metadata_mapping.get(raw_type, {})
+        metadata_tags = mapped_payload.get("metadata", {})
+        if not isinstance(metadata_tags, dict):
+            metadata_tags = {}
+            
+        has_parent_tags = False
+
+        # Extract explicitly configured hierarchical metadata
+        for tag_key, payload_key in metadata_config.items():
+            val = mapped_payload.get(payload_key, payload.get(payload_key))
+            if val is not None:
+                metadata_tags[tag_key] = val
+                has_parent_tags = True
+
         # Resolve parents dynamically
         if parent_fields:
             if isinstance(parent_fields, str):
@@ -86,6 +102,10 @@ class MultiVendorAdapter:
                 if not parent_ext_id:
                     # try without mapping
                     parent_ext_id = mapped_payload.get(parent_ext_id_key)
+                    
+                if parent_ext_id:
+                    metadata_tags[f"parent_{parent_field}_id"] = parent_ext_id
+                    has_parent_tags = True
 
                 if parent_ext_id:
                     ParentModelCls = ModelCls._meta.get_field(parent_field).related_model
@@ -103,6 +123,11 @@ class MultiVendorAdapter:
                         )
                         return 202, {"message": "Buffered due to missing parent"}
                     defaults[parent_field] = parent_obj
+
+        if not has_parent_tags:
+            metadata_tags["parent_id"] = "root"
+            
+        defaults["metadata"] = metadata_tags
 
         # Sync
         obj, _ = ModelCls.objects.update_or_create(

@@ -649,33 +649,52 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
         with transaction.atomic():
             job = SyncJob.objects.create(user=request.user, provider=provider, status="PENDING")
 
-            # Create tasks, and map their temporary IDs to set dependencies
-            task_objects = []
-            entity_type_to_task = {}
-            for entity in sorted_entities:
-                task = SyncTask(
-                    job=job,
-                    entity_type=entity.entity_type,
-                    payload=entity.payload,
-                    status="PENDING",
-                )
-                task.save()
-                task_objects.append(task)
-                # Keep a list of tasks per entity type to resolve dependencies
-                entity_type_to_task.setdefault(entity.entity_type, []).append(task)
+            if len(payload.entities) > 2000:
+                import json
+                from clinical.storage import get_storage_adapter
+                
+                adapter = get_storage_adapter()
+                raw_data_list = []
+                for e in payload.entities:
+                    e_dict = e.model_dump()
+                    # Metadata stripping during file generation to avoid middleware bottlenecks
+                    e_dict.get("payload", {}).pop("metadata", None)
+                    raw_data_list.append(e_dict)
+                
+                raw_data = json.dumps(raw_data_list)
+                job.file_path = adapter.save(f"sync_job_{job.id}.json", raw_data, namespace="sync_jobs")
+                job.save(update_fields=["file_path"])
+                
+                from clinical.tasks import process_direct_data_job
+                process_direct_data_job.delay(job.id)
+            else:
+                # Create tasks, and map their temporary IDs to set dependencies
+                task_objects = []
+                entity_type_to_task = {}
+                for entity in sorted_entities:
+                    task = SyncTask(
+                        job=job,
+                        entity_type=entity.entity_type,
+                        payload=entity.payload,
+                        status="PENDING",
+                    )
+                    task.save()
+                    task_objects.append(task)
+                    # Keep a list of tasks per entity type to resolve dependencies
+                    entity_type_to_task.setdefault(entity.entity_type, []).append(task)
 
-            # Assign DAG dependencies dynamically based on Provider definition
-            dependencies_map = get_provider_dependencies(provider)
-            for task in task_objects:
-                parent_types = dependencies_map.get(task.entity_type, [])
-                for parent_type in parent_types:
-                    parent_tasks = entity_type_to_task.get(parent_type, [])
-                    for pt in parent_tasks:
-                        task.dependencies.add(pt)
+                # Assign DAG dependencies dynamically based on Provider definition
+                dependencies_map = get_provider_dependencies(provider)
+                for task in task_objects:
+                    parent_types = dependencies_map.get(task.entity_type, [])
+                    for parent_type in parent_types:
+                        parent_tasks = entity_type_to_task.get(parent_type, [])
+                        for pt in parent_tasks:
+                            task.dependencies.add(pt)
 
-        # Trigger celery orchestrator
-        from clinical.tasks import orchestrate_sync_job
-        orchestrate_sync_job.delay(job.id)
+                # Trigger celery orchestrator
+                from clinical.tasks import orchestrate_sync_job
+                orchestrate_sync_job.delay(job.id)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(

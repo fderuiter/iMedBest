@@ -54,6 +54,7 @@ class JWTBearer(HttpBearer):
         return None
 
 
+from audit.models import AuditLog
 from .models import (
     BufferedOrphan,
     Coding,
@@ -1008,7 +1009,7 @@ def list_records(request, studyKey: str | None = None, parent_id: str | None = N
     )
     if parent_id:
         qs = qs.filter(metadata__parent_id=parent_id)
-    return qs
+    return mask_pii_for_user(request, list(qs))
 
 
 # L4: Coding
@@ -1189,7 +1190,7 @@ def list_revisions(request, studyKey: str | None = None, parent_id: str | None =
     )
     if parent_id:
         qs = qs.filter(metadata__parent_id=parent_id)
-    return qs
+    return mask_pii_for_user(request, list(qs))
 
 
 @router.get("/export/cdisc")
@@ -1270,8 +1271,6 @@ def _reprocess_orphan(orphan):
     result = adapter.sync_entity(req, orphan.entity_type, orphan.payload)
 
     if not (isinstance(result, tuple) and len(result) == 2 and result[0] == 202):
-        from .models import SyncTask
-        from audit.models import AuditLog
         tasks = SyncTask.objects.filter(status="BUFFERED", entity_type=orphan.entity_type)
         for task in tasks:
             if task.payload == orphan.payload:
@@ -1287,7 +1286,7 @@ def _reprocess_orphan(orphan):
                         "resolving_parent_record": orphan.missing_parent_id,
                     }
                 )
-                logger.info("Transitioned buffered task %s to COMPLETED via parent %s", task.id, orphan.missing_parent_id)
+                logger.info("Transitioned task %s to COMPLETED via parent %s", task.id, orphan.missing_parent_id)
 
     orphan.delete()
 

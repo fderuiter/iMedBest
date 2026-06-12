@@ -76,7 +76,7 @@ class MultiVendorAdapter:
         metadata_tags = mapped_payload.get("metadata", {})
         if not isinstance(metadata_tags, dict):
             metadata_tags = {}
-            
+
         has_parent_tags = False
 
         # Extract explicitly configured hierarchical metadata
@@ -84,7 +84,6 @@ class MultiVendorAdapter:
             val = mapped_payload.get(payload_key, payload.get(payload_key))
             if val is not None:
                 metadata_tags[tag_key] = val
-                has_parent_tags = True
 
         # Resolve parents dynamically
         if parent_fields:
@@ -102,7 +101,7 @@ class MultiVendorAdapter:
                 if not parent_ext_id:
                     # try without mapping
                     parent_ext_id = mapped_payload.get(parent_ext_id_key)
-                    
+
                 if parent_ext_id:
                     metadata_tags[f"parent_{parent_field}_id"] = parent_ext_id
                     has_parent_tags = True
@@ -126,7 +125,7 @@ class MultiVendorAdapter:
 
         if not has_parent_tags:
             metadata_tags["parent_id"] = "root"
-            
+
         defaults["metadata"] = metadata_tags
 
         # Sync

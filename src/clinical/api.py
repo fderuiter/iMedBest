@@ -1,4 +1,5 @@
 # ruff: noqa: ERA001
+import json
 import logging
 
 import ninja.orm
@@ -8,6 +9,9 @@ from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
 from ninja.security import APIKeyHeader, HttpBearer
 from pydantic.alias_generators import to_camel
+
+from clinical.storage import get_storage_adapter
+from clinical.tasks import process_direct_data_job
 
 ninja.schema.Schema.model_config["alias_generator"] = to_camel
 ninja.schema.Schema.model_config["populate_by_name"] = True
@@ -531,7 +535,6 @@ def get_accessible_subjects(request):
     return qs.filter(Q(site__study_id__in=auditor_study_ids) | Q(site_id__in=investigator_site_ids)).distinct()
 
 
-import json
 from typing import Any
 
 from django.core.exceptions import PermissionDenied
@@ -650,9 +653,6 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
             job = SyncJob.objects.create(user=request.user, provider=provider, status="PENDING")
 
             if len(payload.entities) > 2000:
-                import json
-                from clinical.storage import get_storage_adapter
-                
                 adapter = get_storage_adapter()
                 raw_data_list = []
                 for e in payload.entities:
@@ -660,13 +660,16 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
                     # Metadata stripping during file generation to avoid middleware bottlenecks
                     e_dict.get("payload", {}).pop("metadata", None)
                     raw_data_list.append(e_dict)
-                
-                raw_data = json.dumps(raw_data_list)
-                job.file_path = adapter.save(f"sync_job_{job.id}.json", raw_data, namespace="sync_jobs")
-                job.save(update_fields=["file_path"])
-                
-                from clinical.tasks import process_direct_data_job
-                process_direct_data_job.delay(job.id)
+
+                try:
+                    raw_data = json.dumps(raw_data_list)
+                    job.file_path = adapter.save(f"sync_job_{job.id}.json", raw_data, namespace="sync_jobs")
+                    job.save(update_fields=["file_path"])
+                    process_direct_data_job.delay(job.id)
+                except Exception as e:
+                    logger.error(f"Failed to process and save bulk sync payload for job {job.id}: {e}", exc_info=True)
+                    job.status = "FAILED"
+                    job.save(update_fields=["status"])
             else:
                 # Create tasks, and map their temporary IDs to set dependencies
                 task_objects = []
@@ -1254,8 +1257,9 @@ def _reprocess_orphan(orphan):
     result = adapter.sync_entity(req, orphan.entity_type, orphan.payload)
 
     if not (isinstance(result, tuple) and len(result) == 2 and result[0] == 202):
-        from .models import SyncTask
         from audit.models import AuditLog
+
+        from .models import SyncTask
         tasks = SyncTask.objects.filter(status="BUFFERED", entity_type=orphan.entity_type)
         for task in tasks:
             if task.payload == orphan.payload:

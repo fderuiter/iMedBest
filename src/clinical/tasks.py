@@ -126,11 +126,14 @@ def process_direct_data_job(self, job_id):
 
     try:
         import json
+
+        from django.db import transaction
+
         from audit.middleware import get_current_request
         from clinical.adapter import MultiVendorAdapter
-        from clinical.storage import get_storage_adapter
         from clinical.graph import topological_sort_entities
         from clinical.schemas import EntityPayload
+        from clinical.storage import get_storage_adapter
 
         request = get_current_request()
         if request is None:
@@ -146,19 +149,27 @@ def process_direct_data_job(self, job_id):
         storage_adapter = get_storage_adapter()
 
         if not job.file_path or not storage_adapter.exists(job.file_path):
-            raise Exception("Direct Data payload file missing")
+            raise FileNotFoundError("Direct Data payload file missing")
 
         with storage_adapter.open(job.file_path, "rb") as f:
             raw_data = json.load(f)
 
         entities = [EntityPayload(**ent) for ent in raw_data]
-        sorted_entities = topological_sort_entities(entities, job.provider)
 
-        # Process each entity linearly
-        for entity in sorted_entities:
-            adapter_instance.sync_entity(request, entity.entity_type, entity.payload)
+        orphaned_count = 0
+        with transaction.atomic():
+            sorted_entities = topological_sort_entities(entities, job.provider)
 
-        job.status = "COMPLETED"
+            # Process each entity linearly
+            for entity in sorted_entities:
+                response = adapter_instance.sync_entity(request, entity.entity_type, entity.payload)
+                if isinstance(response, tuple) and response[0] == 202:
+                    orphaned_count += 1
+
+        if orphaned_count > 0:
+            job.status = "PARTIAL"
+        else:
+            job.status = "COMPLETED"
         job.save(update_fields=["status"])
         run_validation_for_job.delay(job.id)
     except Exception as exc:

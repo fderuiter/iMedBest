@@ -356,7 +356,8 @@ def export_cdisc_task(job_id):
                 job.file_path = final_path
                 job.status = "COMPLETED"
                 job.completed_at = timezone.now()
-                job.save(update_fields=["status", "file_path", "completed_at"])
+                job.contains_phi = contains_phi
+                job.save(update_fields=["status", "file_path", "completed_at", "contains_phi"])
 
                 # Notification requirement 5 & 6
                 OutboundEvent.objects.create(

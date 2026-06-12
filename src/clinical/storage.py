@@ -219,8 +219,7 @@ class ComplianceStorageProxy:
             raise ValueError("contains_phi must be explicitly specified (True or False) for exists()")
         if contains_phi is True:
             return self.baa_adapter.exists(path)
-        if contains_phi is False:
-            return self.primary_adapter.exists(path)
+        return self.primary_adapter.exists(path)
 
     def get_absolute_path(self, path, contains_phi=None):
         if contains_phi is None:

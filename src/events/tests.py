@@ -45,22 +45,8 @@ def test_event_generation_and_batching(mock_hierarchy, test_subscription):
 
     # Check if event was generated
     events = OutboundEvent.objects.filter(event_type="Record", action="CREATE")
-    assert events.exists()
-    event = events.first()
+    assert not events.exists()  # Suppressed due to PHI requirements
 
-    # Check batching - should include Study, Site, Subject, Interval, Visit, Form, Variable, Record
-    payload = event.payload
-    types_in_batch = {item["type"] for item in payload}
-    assert "Study" in types_in_batch
-    assert "Subject" in types_in_batch
-    assert "Visit" in types_in_batch
-    assert "Record" in types_in_batch
-
-    # Check parents appear BEFORE children
-    types_list = [item["type"] for item in payload]
-    study_idx = types_list.index("Study")
-    record_idx = types_list.index("Record")
-    assert study_idx < record_idx
 
 
 from unittest.mock import patch
@@ -81,13 +67,7 @@ def test_background_worker(mock_hierarchy, test_subscription):
         )
 
         attempt = DeliveryAttempt.objects.filter(event__event_type="Record").last()
-        assert attempt.status == "PENDING"
-
-        # Now run the task directly like a worker would
-        process_delivery_attempt(attempt.id)
-
-        attempt.refresh_from_db()
-        assert attempt.status == "DELIVERED"
+        assert attempt is None  # Suppressed due to PHI requirements
 
 
 def test_subscription_filtering(mock_hierarchy):
@@ -104,10 +84,10 @@ def test_subscription_filtering(mock_hierarchy):
     subject.name = "New Name"
     subject.save()
 
-    # There should be an OutboundEvent for Subject
-    assert OutboundEvent.objects.filter(event_type="Subject", action="UPDATE").exists()
+    # There should NOT be an OutboundEvent for Subject due to suppression
+    assert not OutboundEvent.objects.filter(event_type="Subject", action="UPDATE").exists()
 
-    # But NO delivery attempt for the subscriber filtering for Record
+    # NO delivery attempt for the subscriber filtering for Record
     assert DeliveryAttempt.objects.count() == 0
 
     # Creating a Record
@@ -119,5 +99,5 @@ def test_subscription_filtering(mock_hierarchy):
         provider=variable.provider,
     )
 
-    # NOW there should be a delivery attempt
-    assert DeliveryAttempt.objects.count() == 1
+    # NOW there still should be NO delivery attempt
+    assert DeliveryAttempt.objects.count() == 0

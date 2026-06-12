@@ -619,6 +619,57 @@ def mask_pii_for_user(request, data):
 from .graph import get_provider_dependencies, topological_sort_entities
 
 
+@router.get("/fhir/{resource_type}")
+def get_fhir_resource(request, resource_type: str, subject: str = None):
+    from ninja.errors import HttpError
+    import requests
+    from clinical.adapter import MultiVendorAdapter
+
+    provider = getattr(request, "provider", None)
+    if not provider:
+        raise HttpError(400, "Missing valid provider context")
+
+    if not provider.api_endpoint:
+        raise HttpError(400, "Provider has no API endpoint configured")
+
+    params = {}
+    if subject:
+        params["subject"] = subject
+
+    try:
+        url = f"{provider.api_endpoint}/{resource_type}"
+        response = requests.get(url, params=params, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+    except Exception as e:
+        raise HttpError(502, f"Failed to fetch data from provider: {e}")
+
+    adapter = MultiVendorAdapter(provider)
+    fhir_resources = []
+    
+    items = data if isinstance(data, list) else [data]
+    
+    # Try to reverse-map FHIR resource to internal raw type to properly map payload keys
+    # or rely on adapter's mapping. We just use the resource_type as raw_type fallback.
+    raw_type_map = {
+        "Patient": "Subject",
+        "Observation": "Record",
+        "MedicationStatement": "Record"
+    }
+    raw_type = raw_type_map.get(resource_type, resource_type)
+
+    for item in items:
+        fhir_res = adapter.to_fhir(raw_type, item, fhir_resource_type=resource_type)
+        if fhir_res:
+            fhir_resources.append(fhir_res)
+
+    return {
+        "resourceType": "Bundle",
+        "type": "searchset",
+        "entry": [{"resource": r} for r in fhir_resources]
+    }
+
+
 @router.post("/sync-jobs", response={200: SyncJobResponse, 400: dict})
 def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = None):
     check_write_allowed(request)

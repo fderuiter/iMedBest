@@ -35,10 +35,12 @@ class AuditMiddleware:
                         action="UNAUTH",
                         model_name="ClinicalAPI",
                         object_id=request.path,
-                        changes={"error": "Unauthorized access attempt"},
-                        user_id=None,
-                        ip_address=ip_address,
-                        user_agent=user_agent,
+                        audit_context={
+                            "changes": {"error": "Unauthorized access attempt"},
+                            "user_id": None,
+                            "ip_address": ip_address,
+                            "user_agent": user_agent,
+                        }
                     )
                 elif request.method == "GET" and response.status_code == 200:
                     user = getattr(request, "user", None)
@@ -47,10 +49,12 @@ class AuditMiddleware:
                             action="SECURITY",  # using SECURITY or another valid choice like UPDATE/CREATE
                             model_name="ClinicalAPI_Read",
                             object_id=request.path,
-                            changes={"method": "GET", "status": 200},
-                            user_id=user.pk,
-                            ip_address=ip_address,
-                            user_agent=user_agent,
+                            audit_context={
+                                "changes": {"method": "GET", "status": 200},
+                                "user_id": user.pk,
+                                "ip_address": ip_address,
+                                "user_agent": user_agent,
+                            }
                         )
 
             return response

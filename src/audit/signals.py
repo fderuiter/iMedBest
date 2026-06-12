@@ -4,10 +4,10 @@ from django.db.utils import OperationalError
 from django.dispatch import receiver
 from django.forms.models import model_to_dict
 
+from .context import get_audit_context
 from .middleware import get_current_request
 from .tasks import create_audit_log_task
 from .utils import extract_study_id
-from .context import get_audit_context
 
 EXCLUDED_MODELS = ["AuditLog", "Session", "LogEntry", "ContentType", "Permission", "Group", "Revision", "Migration"]
 
@@ -46,16 +46,20 @@ def create_audit_log(action, instance, changes=None):
                     if changes[field].get("new") is not None and changes[field]["new"] != "":
                         changes[field]["new"] = "[REDACTED]"
 
+    context = get_audit_context()
+    context.update({
+        "changes": changes,
+        "user_id": user.pk if user else None,
+        "ip_address": ip_address,
+        "user_agent": user_agent,
+        "study_id": study_id,
+    })
+
     create_audit_log_task.delay(
         action=action,
         model_name=model_name,
         object_id=str(instance.pk),
-        changes=changes,
-        user_id=user.pk if user else None,
-        ip_address=ip_address,
-        user_agent=user_agent,
-        study_id=study_id,
-        **get_audit_context()
+        audit_context=context,
     )
 
 
@@ -121,10 +125,12 @@ def log_login(sender, request, user, **kwargs):
         action="LOGIN",
         model_name="",
         object_id="",
-        changes=None,
-        user_id=user.pk if user else None,
-        ip_address=ip_address,
-        user_agent=user_agent,
+        audit_context={
+            "changes": None,
+            "user_id": user.pk if user else None,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+        }
     )
 
 
@@ -136,8 +142,10 @@ def log_logout(sender, request, user, **kwargs):
         action="LOGOUT",
         model_name="",
         object_id="",
-        changes=None,
-        user_id=user.pk if user else None,
-        ip_address=ip_address,
-        user_agent=user_agent,
+        audit_context={
+            "changes": None,
+            "user_id": user.pk if user else None,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+        }
     )

@@ -1,6 +1,6 @@
 import csv
-import io
 import hashlib
+import io
 
 from django.http import HttpResponse, HttpResponseForbidden
 from ninja import Router
@@ -10,6 +10,15 @@ from clinical.api import JWTBearer
 from .models import AuditLog
 
 router = Router(auth=[JWTBearer()])
+
+
+def sanitize_csv_cell(value):
+    if value is None:
+        return ""
+    value = str(value)
+    if value.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
 
 
 @router.get("/export")
@@ -29,7 +38,7 @@ def export_audit_log(
             return HttpResponseForbidden("A valid study_id is required to export audit logs.")
     elif not is_admin:
         has_role = StudyMembership.objects.filter(
-            user=request.user, study_id=study_id, role__in=["clinical_auditor", "investigator"]
+            user=request.user, study_id=study_id, role__in=["clinical_auditor"]
         ).exists()
         if not has_role:
             return HttpResponseForbidden("You do not have permission to export audit logs for this study.")
@@ -62,14 +71,14 @@ def export_audit_log(
         writer.writerow(
             [
                 log.timestamp.isoformat(),
-                log.action,
-                log.model_name,
-                log.object_id,
-                log.study_id or "",
-                str(log.changes),
-                user_id_out,
-                ip_out,
-                log.user_agent,
+                sanitize_csv_cell(log.action),
+                sanitize_csv_cell(log.model_name),
+                sanitize_csv_cell(log.object_id),
+                sanitize_csv_cell(log.study_id or ""),
+                sanitize_csv_cell(str(log.changes)),
+                sanitize_csv_cell(user_id_out),
+                sanitize_csv_cell(ip_out),
+                sanitize_csv_cell(log.user_agent),
             ]
         )
     response = HttpResponse(buffer.getvalue(), content_type="text/csv")
@@ -88,7 +97,7 @@ def reconciliation_report(request, study_id: str | None = None):
             return HttpResponseForbidden("A valid study_id is required to export reconciliation report.")
     elif not is_admin:
         has_role = StudyMembership.objects.filter(
-            user=request.user, study_id=study_id, role__in=["clinical_auditor", "investigator"]
+            user=request.user, study_id=study_id, role__in=["clinical_auditor"]
         ).exists()
         if not has_role:
             return HttpResponseForbidden("You do not have permission to export reconciliation report for this study.")
@@ -119,24 +128,21 @@ def reconciliation_report(request, study_id: str | None = None):
         writer.writerow(
             [
                 log.timestamp.isoformat(),
-                log.action,
-                log.model_name,
-                log.object_id,
-                str(log.changes),
-                log.agent_did or "",
-                log.supervisor_did or "",
-                log.external_transaction_id or "",
-                log.cryptographic_signature or "",
-                log.rejection_reason or "",
+                sanitize_csv_cell(log.action),
+                sanitize_csv_cell(log.model_name),
+                sanitize_csv_cell(log.object_id),
+                sanitize_csv_cell(str(log.changes)),
+                sanitize_csv_cell(log.agent_did or ""),
+                sanitize_csv_cell(log.supervisor_did or ""),
+                sanitize_csv_cell(log.external_transaction_id or ""),
+                sanitize_csv_cell(log.cryptographic_signature or ""),
+                sanitize_csv_cell(log.rejection_reason or ""),
             ]
         )
 
     csv_content = buffer.getvalue()
     content_hash = hashlib.sha256(csv_content.encode('utf-8')).hexdigest()
-    
-    final_content = csv_content + f"\n# SHA256 HASH: {content_hash}\n"
-    
-    response = HttpResponse(final_content, content_type="text/csv")
+    response = HttpResponse(csv_content, content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="reconciliation_report.csv"'
     response["X-Report-Hash"] = content_hash
     return response

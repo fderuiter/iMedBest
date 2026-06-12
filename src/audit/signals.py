@@ -18,7 +18,6 @@ def get_client_ip(request):
     return request.META.get("REMOTE_ADDR")
 
 
-
 def create_audit_log(action, instance, changes=None):
     model_name = instance.__class__.__name__
     if model_name in EXCLUDED_MODELS:

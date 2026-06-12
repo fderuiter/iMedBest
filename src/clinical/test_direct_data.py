@@ -13,6 +13,7 @@ from users.jwt import create_jwt_token
 
 User = get_user_model()
 
+
 @pytest.mark.django_db(transaction=True)
 def test_direct_data_bulk_ingestion():
     PASSWORD = "password"  # noqa: S105
@@ -20,46 +21,23 @@ def test_direct_data_bulk_ingestion():
     provider = Provider.objects.create(name="Test Provider")
 
     token = create_jwt_token(user)
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "X-Provider": str(provider.id),
-        "studyKey": "S1"
-    }
+    headers = {"Authorization": f"Bearer {token}", "X-Provider": str(provider.id), "studyKey": "S1"}
 
     entities = [
-        {
-            "entity_type": "Study",
-            "payload": {
-                "external_id": "STUDY1",
-                "name": "Test Study"
-            }
-        },
-        {
-            "entity_type": "Site",
-            "payload": {
-                "external_id": "SITE1",
-                "study_ext_id": "STUDY1",
-                "name": "Test Site"
-            }
-        }
+        {"entity_type": "Study", "payload": {"external_id": "STUDY1", "name": "Test Study"}},
+        {"entity_type": "Site", "payload": {"external_id": "SITE1", "study_ext_id": "STUDY1", "name": "Test Site"}},
     ]
     for i in range(2005):
-        entities.append({
-            "entity_type": "Subject",
-            "payload": {
-                "external_id": f"SUB{i}",
-                "site_ext_id": "SITE1",
-                "metadata": {"some": "data"}
+        entities.append(
+            {
+                "entity_type": "Subject",
+                "payload": {"external_id": f"SUB{i}", "site_ext_id": "SITE1", "metadata": {"some": "data"}},
             }
-        })
+        )
 
     with patch("clinical.api.process_direct_data_job.delay"):
         client = TestClient(router)
-        response = client.post(
-            "/sync-jobs",
-            json={"entities": entities},
-            headers=headers
-        )
+        response = client.post("/sync-jobs", json={"entities": entities}, headers=headers)
 
     assert response.status_code == 200
     data = response.json()

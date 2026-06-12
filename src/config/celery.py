@@ -18,6 +18,7 @@ def inject_context_into_task(headers=None, **kwargs):
         return
 
     from audit.middleware import get_current_request
+
     request = get_current_request()
 
     if request:
@@ -72,6 +73,7 @@ def _pop_token(task_id):
 @task_prerun.connect
 def setup_task_context(task_id, task, *args, **kwargs):
     from audit.middleware import _request_ctx_var
+
     request_headers = getattr(task.request, "headers", {}) or {}
 
     user_id = request_headers.get("audit_user_id")
@@ -86,6 +88,7 @@ def setup_task_context(task_id, task, *args, **kwargs):
 @task_postrun.connect
 def teardown_task_context(task_id, task, *args, **kwargs):
     from audit.middleware import _request_ctx_var
+
     token = _pop_token(task_id)
     if token:
         _request_ctx_var.reset(token)

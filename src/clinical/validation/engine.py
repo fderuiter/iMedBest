@@ -4,6 +4,7 @@ from clinical.models import Query, Record, Subject, SyncJob, ValidationResult, V
 
 logger = logging.getLogger(__name__)
 
+
 def execute_validation_for_job(job_id: str):
     try:
         job = SyncJob.objects.get(id=job_id)
@@ -14,6 +15,7 @@ def execute_validation_for_job(job_id: str):
         logger.error(f"Failed to execute validation for job {job_id}: {e}")
         # Re-raise exception so Celery can mark the task as failed and trigger retries
         raise
+
 
 def execute_rule_for_job(rule: ValidationRule, job: SyncJob):
     dsl = rule.rule_dsl
@@ -34,10 +36,11 @@ def _check_cross_subject_duplicate(rule, job, dsl):
 
     # Scope subjects to the job's provider to avoid cross-tenant issues
     from collections import defaultdict
+
     provider_id = job.provider_id
 
     # Only check subjects within the job's provider scope, select_related to get site/study
-    subjects = Subject.objects.filter(provider_id=provider_id).select_related('site', 'site__study')
+    subjects = Subject.objects.filter(provider_id=provider_id).select_related("site", "site__study")
 
     # Group by (study_id or provider_id, name) instead of just name globally
     # This ensures we only flag duplicates within the same study/provider context
@@ -45,7 +48,7 @@ def _check_cross_subject_duplicate(rule, job, dsl):
     for sub in subjects:
         if sub.name:
             # Use study_id if available, otherwise fall back to provider_id for grouping
-            study_id = sub.site.study_id if sub.site and hasattr(sub.site, 'study_id') and sub.site.study_id else None
+            study_id = sub.site.study_id if sub.site and hasattr(sub.site, "study_id") and sub.site.study_id else None
             grouping_key = (study_id if study_id else provider_id, sub.name)
             grouped[grouping_key].append(sub)
 
@@ -53,9 +56,11 @@ def _check_cross_subject_duplicate(rule, job, dsl):
     subject_ids = [sub.id for subs in grouped.values() for sub in subs if len(subs) > 1]
     if subject_ids:
         # Build a mapping of subject_id -> representative Record
-        records_queryset = Record.objects.filter(
-            visit__subject_id__in=subject_ids
-        ).select_related('visit', 'visit__subject').distinct()
+        records_queryset = (
+            Record.objects.filter(visit__subject_id__in=subject_ids)
+            .select_related("visit", "visit__subject")
+            .distinct()
+        )
 
         subject_to_record = {}
         for record in records_queryset:
@@ -78,9 +83,7 @@ def _check_cross_subject_duplicate(rule, job, dsl):
                     if record:
                         # Check for existing OPEN query/validation result to avoid duplicates
                         existing_query = Query.objects.filter(
-                            record=record,
-                            status="OPEN",
-                            text__contains=f"Subject {sub.name} exists in multiple sites"
+                            record=record, status="OPEN", text__contains=f"Subject {sub.name} exists in multiple sites"
                         ).first()
 
                         if not existing_query:
@@ -88,17 +91,13 @@ def _check_cross_subject_duplicate(rule, job, dsl):
                                 record=record,
                                 text=f"Global Duplicate Detection: Subject {sub.name} exists in multiple sites.",
                                 status="OPEN",
-                                sync_status="PENDING"
+                                sync_status="PENDING",
                             )
                         else:
                             query = existing_query
 
                         # Check for existing ValidationResult to avoid duplicates
-                        existing_result = ValidationResult.objects.filter(
-                            rule=rule,
-                            job=job,
-                            query=query
-                        ).first()
+                        existing_result = ValidationResult.objects.filter(rule=rule, job=job, query=query).first()
 
                         if not existing_result:
                             ValidationResult.objects.create(
@@ -106,7 +105,7 @@ def _check_cross_subject_duplicate(rule, job, dsl):
                                 job=job,
                                 passed=False,
                                 error_message="Cross-site duplicate detected",
-                                query=query
+                                query=query,
                             )
                     else:
                         # No Record found - still create ValidationResult with query=None
@@ -114,7 +113,7 @@ def _check_cross_subject_duplicate(rule, job, dsl):
                             rule=rule,
                             job=job,
                             query__isnull=True,
-                            error_message__contains=f"Subject {sub.name} cross-site duplicate (no record)"
+                            error_message__contains=f"Subject {sub.name} cross-site duplicate (no record)",
                         ).first()
 
                         if not existing_result:
@@ -123,8 +122,7 @@ def _check_cross_subject_duplicate(rule, job, dsl):
                                 job=job,
                                 passed=False,
                                 error_message=(
-                                    f"Cross-site duplicate detected: Subject {sub.name} "
-                                    f"(no backing Record available)"
+                                    f"Cross-site duplicate detected: Subject {sub.name} (no backing Record available)"
                                 ),
                                 query=None,
                             )
@@ -147,10 +145,9 @@ def _check_compare_records(rule, job, dsl):
     visits = Visit.objects.filter(subject__provider_id=job.provider_id)
 
     # Fetch all records for both variables in one query to avoid N+1
-    records = Record.objects.filter(
-        visit__in=visits,
-        variable__name__in=[var1_name, var2_name]
-    ).select_related('visit', 'variable')
+    records = Record.objects.filter(visit__in=visits, variable__name__in=[var1_name, var2_name]).select_related(
+        "visit", "variable"
+    )
 
     # Build a mapping of visit_id -> {var_name: Record}
     visit_records = {}
@@ -193,14 +190,10 @@ def _check_compare_records(rule, job, dsl):
                         record=rec1,
                         text=f"Validation failed: {var1_name} ({val1}) should be {operator} {var2_name} ({val2})",
                         status="OPEN",
-                        sync_status="PENDING"
+                        sync_status="PENDING",
                     )
                     ValidationResult.objects.create(
-                        rule=rule,
-                        job=job,
-                        passed=False,
-                        error_message="Field comparison failed",
-                        query=query
+                        rule=rule, job=job, passed=False, error_message="Field comparison failed", query=query
                     )
             except ValueError:
                 # Values aren't floats, skip or handle

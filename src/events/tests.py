@@ -18,6 +18,7 @@ def test_subscription(mock_hierarchy):
 @pytest.fixture
 def mock_hierarchy():
     from clinical.models import Provider
+
     provider, _ = Provider.objects.get_or_create(name="Test Provider")
     study = Study.objects.create(external_id="study1", name="Study 1", provider=provider)
     site = Site.objects.create(external_id="site1", name="Site 1", study=study, provider=provider)

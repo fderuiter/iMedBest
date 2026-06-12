@@ -33,6 +33,7 @@ from users.api import router as users_router
 def health_check(request):
     return HttpResponse("OK", status=200)
 
+
 api = NinjaAPI()
 api.add_router("/clinical/", clinical_router, tags=["legacy"], url_name_prefix="legacy")
 api.add_router("/v1/edc/studies/{studyKey}/", clinical_router, tags=["spec-compliant"], url_name_prefix="spec")

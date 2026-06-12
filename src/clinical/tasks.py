@@ -138,11 +138,13 @@ def process_direct_data_job(self, job_id):
         request = get_current_request()
         if request is None:
             from django.contrib.auth.models import AnonymousUser
+
             class _SystemRequest:
                 user = AnonymousUser()
                 user_roles: list = []
                 provider = job.provider
                 META: dict = {}
+
             request = _SystemRequest()
 
         adapter_instance = MultiVendorAdapter(job.provider)
@@ -176,6 +178,7 @@ def process_direct_data_job(self, job_id):
         job.status = "FAILED"
         job.error_message = str(exc)
         job.save(update_fields=["status", "error_message"])
+
 
 @shared_task(bind=True, max_retries=5, acks_late=True, reject_on_worker_lost=True)
 def process_single_task(self, task_id):
@@ -419,4 +422,5 @@ def export_cdisc_task(job_id):
 @shared_task
 def run_validation_for_job(job_id):
     from clinical.validation.engine import execute_validation_for_job
+
     execute_validation_for_job(job_id)

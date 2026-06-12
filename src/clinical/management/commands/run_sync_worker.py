@@ -105,4 +105,3 @@ class Command(BaseCommand):
 
         adapter = MultiVendorAdapter(task.job.provider)
         return adapter.sync_entity(request, entity_type, payload)
-

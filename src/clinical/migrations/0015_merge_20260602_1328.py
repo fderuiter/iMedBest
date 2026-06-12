@@ -4,12 +4,10 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('clinical', '0014_alter_bufferedorphan_provider_alter_coding_provider_and_more'),
-        ('clinical', '0014_remove_synctask_hierarchy_level_and_more'),
-        ('clinical', '0014_validationrule_validationresult'),
+        ("clinical", "0014_alter_bufferedorphan_provider_alter_coding_provider_and_more"),
+        ("clinical", "0014_remove_synctask_hierarchy_level_and_more"),
+        ("clinical", "0014_validationrule_validationresult"),
     ]
 
-    operations = [
-    ]
+    operations = []

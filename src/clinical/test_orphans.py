@@ -8,6 +8,7 @@ from users.jwt import create_jwt_token
 
 def get_auth_headers():
     from clinical.models import Provider
+
     provider, _ = Provider.objects.get_or_create(name="Test Provider")
     User = get_user_model()
     user, _ = User.objects.get_or_create(username="test_user", is_staff=True)
@@ -112,6 +113,7 @@ def test_reactive_orphan_buffering(client):
 
     # Verify AuditLog was created for the transition
     from audit.models import AuditLog
+
     log = AuditLog.objects.filter(model_name="SyncTask", object_id=str(rec_task.id), action="UPDATE").first()
     assert log is not None
     assert log.changes["status"] == ["BUFFERED", "COMPLETED"]

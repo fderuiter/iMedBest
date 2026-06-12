@@ -24,7 +24,7 @@ class AuditLoggingError(Exception):
     pass
 
 
-def fallback_audit_write(action, model_name, object_id, changes, user, ip_address, user_agent):
+def fallback_audit_write(action, model_name, object_id, changes, user, ip_address, user_agent):  # noqa: PLR0913
     """
     Fallback audit writer that writes audit entries to a dedicated local file
     when the database audit log is unavailable.

@@ -74,7 +74,7 @@ def test_reactive_orphan_buffering(client):
     process_all_jobs()
     assert rec_resp.status_code == 200
     assert BufferedOrphan.objects.count() == 1
-    
+
     # Task should be in BUFFERED state, not COMPLETED
     rec_job_id = rec_resp.json()["jobId"]
     rec_task = SyncJob.objects.get(id=rec_job_id).tasks.first()

@@ -1275,7 +1275,9 @@ def _reprocess_orphan(orphan):
                         "resolving_parent_record": orphan.missing_parent_id,
                     }
                 )
-                logger.info("Transitioned buffered task %s to COMPLETED via parent %s", task.id, orphan.missing_parent_id)
+                logger.info(
+                    "Transitioned buffered task %s to COMPLETED via parent %s", task.id, orphan.missing_parent_id
+                )
 
     orphan.delete()
 

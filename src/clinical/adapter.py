@@ -57,7 +57,7 @@ class MultiVendorAdapter:
         }
 
         # Additional scalar fields depending on model
-        for field in ["clinical_timestamp", "source_sequence", "name", "value", "code", "text"]:
+        for field in ["clinical_timestamp", "source_sequence", "name", "value", "code", "text", "contains_phi"]:
             if field in mapped_payload:
                 val = mapped_payload[field]
                 if field == "clinical_timestamp" and val and isinstance(val, str):

@@ -70,6 +70,9 @@ class ClinicalEntity(models.Model):
 
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    contains_phi = models.BooleanField(
+        default=False, help_text="Indicates if this entity contains Protected Health Information (PHI)."
+    )
 
     objects = ActiveManager()
     all_objects = AllManager()
@@ -386,6 +389,7 @@ class ExportJob(models.Model):
     user = models.ForeignKey("users.User", on_delete=models.CASCADE)
     status = models.CharField(max_length=50, default="PENDING")  # PENDING, PROCESSING, COMPLETED, FAILED
     file_path = models.CharField(max_length=500, null=True, blank=True)
+    contains_phi = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(null=True, blank=True)

@@ -18,9 +18,97 @@ class Migration(migrations.Migration):
             name="clinical_study_unique_provider_external_id",
         ),
         migrations.AddField(
+            model_name="coding",
+            name="contains_phi",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indicates if this entity contains Protected Health Information (PHI).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="form",
+            name="contains_phi",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indicates if this entity contains Protected Health Information (PHI).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="interval",
+            name="contains_phi",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indicates if this entity contains Protected Health Information (PHI).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="query",
+            name="contains_phi",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indicates if this entity contains Protected Health Information (PHI).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="record",
+            name="contains_phi",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indicates if this entity contains Protected Health Information (PHI).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="recordrevision",
+            name="contains_phi",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indicates if this entity contains Protected Health Information (PHI).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="site",
+            name="contains_phi",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indicates if this entity contains Protected Health Information (PHI).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="study",
+            name="contains_phi",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indicates if this entity contains Protected Health Information (PHI).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="subject",
+            name="contains_phi",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indicates if this entity contains Protected Health Information (PHI).",
+            ),
+        ),
+        migrations.AddField(
             model_name="syncjob",
             name="file_path",
             field=models.CharField(blank=True, max_length=500, null=True),
+        ),
+        migrations.AddField(
+            model_name="variable",
+            name="contains_phi",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indicates if this entity contains Protected Health Information (PHI).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="visit",
+            name="contains_phi",
+            field=models.BooleanField(
+                default=False,
+                help_text="Indicates if this entity contains Protected Health Information (PHI).",
+            ),
         ),
         migrations.AlterField(
             model_name="synctask",

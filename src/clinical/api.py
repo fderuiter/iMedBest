@@ -1218,10 +1218,11 @@ def download_cdisc_package(request, job_id: int):
         raise Http404("Job not found") from exc
 
     adapter = get_storage_adapter()
-    if job.status != "COMPLETED" or not job.file_path or not adapter.exists(job.file_path):
+    phi = job.contains_phi
+    if job.status != "COMPLETED" or not job.file_path or not adapter.exists(job.file_path, contains_phi=phi):
         return HttpResponse("Job not completed or file missing.", status=400)
 
-    response = HttpResponse(adapter.open(job.file_path, "rb"), content_type="application/zip")
+    response = HttpResponse(adapter.open(job.file_path, "rb", contains_phi=phi), content_type="application/zip")
     response["Content-Disposition"] = 'attachment; filename="cdisc_export.zip"'
     return response
 

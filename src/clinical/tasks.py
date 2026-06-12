@@ -150,10 +150,10 @@ def process_direct_data_job(self, job_id):
         adapter_instance = MultiVendorAdapter(job.provider)
         storage_adapter = get_storage_adapter()
 
-        if not job.file_path or not storage_adapter.exists(job.file_path):
+        if not job.file_path or not storage_adapter.exists(job.file_path, contains_phi=False):
             raise FileNotFoundError("Direct Data payload file missing")
 
-        with storage_adapter.open(job.file_path, "rb") as f:
+        with storage_adapter.open(job.file_path, "rb", contains_phi=False) as f:
             raw_data = json.load(f)
 
         entities = [EntityPayload(**ent) for ent in raw_data]
@@ -393,13 +393,36 @@ def export_cdisc_task(job_id):
         adapter = get_storage_adapter()
         try:
             with transaction.atomic():
+                # Compute aggregate contains_phi from study and all descendants
+                from clinical.models import Record, Subject, Variable
+
+                contains_phi = getattr(study, "contains_phi", False)
+
+                # Check if any descendant entities contain PHI
+                if not contains_phi:
+                    # Check Sites
+                    contains_phi = study.sites.filter(contains_phi=True).exists()
+
+                if not contains_phi:
+                    # Check Subjects
+                    contains_phi = Subject.objects.filter(site__study=study, contains_phi=True).exists()
+
+                if not contains_phi:
+                    # Check Records
+                    contains_phi = Record.objects.filter(visit__subject__site__study=study, contains_phi=True).exists()
+
+                if not contains_phi:
+                    # Check Variables
+                    contains_phi = Variable.objects.filter(form__study=study, contains_phi=True).exists()
+
                 with open(tmp_zip_path, "rb") as f:
-                    final_path = adapter.save(f"export_{job_id}.zip", f, namespace="exports")
+                    final_path = adapter.save(f"export_{job_id}.zip", f, namespace="exports", contains_phi=contains_phi)
 
                 job.file_path = final_path
                 job.status = "COMPLETED"
                 job.completed_at = timezone.now()
-                job.save(update_fields=["status", "file_path", "completed_at"])
+                job.contains_phi = contains_phi
+                job.save(update_fields=["status", "file_path", "completed_at", "contains_phi"])
 
                 # Notification requirement 5 & 6
                 OutboundEvent.objects.create(

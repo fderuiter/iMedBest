@@ -16,10 +16,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="synctask",
             name="dependencies",
-<<<<<<< HEAD
             field=models.ManyToManyField(blank=True, related_name="dependents", symmetrical=False, to="clinical.synctask"),
-=======
-            field=models.ManyToManyField(blank=True, related_name="dependents", to="clinical.synctask"),
->>>>>>> origin/main
         ),
     ]

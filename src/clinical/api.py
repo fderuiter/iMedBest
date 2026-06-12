@@ -691,12 +691,6 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
                     # Keep a list of tasks per entity type to resolve dependencies
                     entity_type_to_task.setdefault(entity.entity_type, []).append(task)
 
-<<<<<<< HEAD
-        # Trigger celery orchestrator
-        from clinical.tasks import orchestrate_sync_job
-
-        orchestrate_sync_job.delay(job.id)
-=======
                 # Assign DAG dependencies dynamically based on Provider definition
                 dependencies_map = get_provider_dependencies(provider)
                 for task in task_objects:
@@ -710,7 +704,6 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
                 from clinical.tasks import orchestrate_sync_job
 
                 orchestrate_sync_job.delay(job.id)
->>>>>>> origin/main
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
@@ -1225,10 +1218,11 @@ def download_cdisc_package(request, job_id: int):
         raise Http404("Job not found") from exc
 
     adapter = get_storage_adapter()
-    if job.status != "COMPLETED" or not job.file_path or not adapter.exists(job.file_path, contains_phi=job.contains_phi):
+    phi = job.contains_phi
+    if job.status != "COMPLETED" or not job.file_path or not adapter.exists(job.file_path, contains_phi=phi):
         return HttpResponse("Job not completed or file missing.", status=400)
 
-    response = HttpResponse(adapter.open(job.file_path, "rb", contains_phi=job.contains_phi), content_type="application/zip")
+    response = HttpResponse(adapter.open(job.file_path, "rb", contains_phi=phi), content_type="application/zip")
     response["Content-Disposition"] = 'attachment; filename="cdisc_export.zip"'
     return response
 

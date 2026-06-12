@@ -12,13 +12,13 @@ def test_storage_adapter_commit_and_rollback():
     # Test successful commit
     with transaction.atomic():
         final_path = adapter.save("test_commit.txt", b"Hello", namespace="test")
-        abs_path = adapter.get_absolute_path(final_path)
+        abs_path = adapter.get_absolute_path(final_path, contains_phi=False)
         # Should not exist yet, staged
         assert not os.path.exists(abs_path)
 
     # Transaction committed, should exist
     assert os.path.exists(abs_path)
-    with adapter.open(final_path, "rb") as f:
+    with adapter.open(final_path, "rb", contains_phi=False) as f:
         assert f.read() == b"Hello"
 
     # Clean up
@@ -32,7 +32,7 @@ def test_storage_adapter_rollback():
     try:
         with transaction.atomic():
             final_path = adapter.save("test_rollback.txt", b"Bad", namespace="test")
-            abs_path = adapter.get_absolute_path(final_path)
+            abs_path = adapter.get_absolute_path(final_path, contains_phi=False)
             assert not os.path.exists(abs_path)
             raise ValueError("Rollback!")
     except ValueError:

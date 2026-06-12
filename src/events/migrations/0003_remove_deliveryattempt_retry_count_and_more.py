@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0014_remove_synctask_hierarchy_level_and_more"),
         ("events", "0002_alter_deliveryattempt_status"),

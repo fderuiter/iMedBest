@@ -7,15 +7,18 @@ from events.tasks import process_delivery_attempt
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-@pytest.fixture()
+@pytest.fixture
 def test_subscription(mock_hierarchy):
     study, *_ = mock_hierarchy
-    return Subscription.objects.create(name="Test Sub", endpoint_url="http://mock.endpoint/webhook", event_type="", study=study)
+    return Subscription.objects.create(
+        name="Test Sub", endpoint_url="http://mock.endpoint/webhook", event_type="", study=study
+    )
 
 
 @pytest.fixture
 def mock_hierarchy():
     from clinical.models import Provider
+
     provider, _ = Provider.objects.get_or_create(name="Test Provider")
     study = Study.objects.create(external_id="study1", name="Study 1", provider=provider)
     site = Site.objects.create(external_id="site1", name="Site 1", study=study, provider=provider)
@@ -90,7 +93,9 @@ def test_background_worker(mock_hierarchy, test_subscription):
 def test_subscription_filtering(mock_hierarchy):
     _study, _site, subject, _form, _interval, variable, visit = mock_hierarchy
 
-    Subscription.objects.create(name="Only Records", endpoint_url="http://mock.endpoint/records", event_type="Record", study=_study)
+    Subscription.objects.create(
+        name="Only Records", endpoint_url="http://mock.endpoint/records", event_type="Record", study=_study
+    )
 
     DeliveryAttempt.objects.all().delete()
     OutboundEvent.objects.all().delete()

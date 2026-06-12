@@ -9,6 +9,7 @@ from .models import Record, SyncJob
 
 def get_auth_headers(study_key="test-study"):
     from clinical.models import Provider
+
     provider, _ = Provider.objects.get_or_create(name="Test Provider")
     User = get_user_model()
     user, _ = User.objects.get_or_create(username="test_user", is_staff=True)
@@ -282,10 +283,7 @@ def test_sync_job_atomic_failure(client):
                 "entityType": "Study",
                 "payload": {"externalId": "study-atomic", "name": "Atomic Study"},
             },
-            {
-                "entityType": "UnknownEntity",
-                "payload": {"externalId": "site-atomic"}
-            },
+            {"entityType": "UnknownEntity", "payload": {"externalId": "site-atomic"}},
         ]
     }
 

@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import shutil
@@ -5,6 +6,7 @@ import tempfile
 
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +16,46 @@ try:
 except ImportError:
     get_current_request = None
     AuditLog = None
+
+
+class AuditLoggingError(Exception):
+    """Raised when audit logging fails and fallback also fails"""
+
+    pass
+
+
+def fallback_audit_write(action, model_name, object_id, changes, user, ip_address, user_agent):
+    """
+    Fallback audit writer that writes audit entries to a dedicated local file
+    when the database audit log is unavailable.
+    """
+    try:
+        root_dir = str(getattr(settings, "ROOT_DIR", tempfile.gettempdir()))
+        audit_dir = os.path.join(root_dir, "fallback_audit")
+        os.makedirs(audit_dir, exist_ok=True)
+
+        audit_file = os.path.join(audit_dir, "audit.log")
+
+        audit_entry = {
+            "timestamp": timezone.now().isoformat(),
+            "action": action,
+            "model_name": model_name,
+            "object_id": object_id,
+            "changes": changes,
+            "user": str(user) if user else None,
+            "user_id": user.id if user and hasattr(user, "id") else None,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+        }
+
+        with open(audit_file, "a") as f:
+            f.write(json.dumps(audit_entry) + "\n")
+
+        logger.warning(f"Audit entry written to fallback file: {audit_file}")
+        return True
+    except Exception as e:
+        logger.error(f"Fallback audit write failed: {e}")
+        return False
 
 
 class RollbackCleanup:
@@ -121,6 +163,7 @@ class ComplianceStorageProxy:
     def _log_audit(self, action, path):
         logger.info(f"AUDIT LOG: PHI-tagged file operation ({action}) for {path}")
         if AuditLog and get_current_request:
+            original_exception = None
             try:
                 request = get_current_request()
                 user = getattr(request, "user", None) if request else None
@@ -131,10 +174,7 @@ class ComplianceStorageProxy:
                 user_agent = None
                 if request:
                     x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-                    if x_forwarded_for:
-                        ip_address = x_forwarded_for.split(",")[0]
-                    else:
-                        ip_address = request.META.get("REMOTE_ADDR")
+                    ip_address = x_forwarded_for.split(",")[0] if x_forwarded_for else request.META.get("REMOTE_ADDR")
                     user_agent = request.META.get("HTTP_USER_AGENT")
 
                 AuditLog.objects.create(
@@ -147,30 +187,56 @@ class ComplianceStorageProxy:
                     user_agent=user_agent,
                 )
             except Exception as e:
+                original_exception = e
                 logger.error(f"Failed to create audit log for {path}: {e}")
 
+                # Attempt fallback audit write
+                fallback_success = fallback_audit_write(
+                    action="SECURITY",
+                    model_name="ComplianceStorage",
+                    object_id=path,
+                    changes={"file_operation": action},
+                    user=user if "user" in locals() else None,
+                    ip_address=ip_address if "ip_address" in locals() else None,
+                    user_agent=user_agent if "user_agent" in locals() else None,
+                )
+
+                # If fallback also fails, re-raise to block the operation
+                if not fallback_success:
+                    raise AuditLoggingError(f"Primary and fallback audit logging failed: {e}") from original_exception
+
     def save(self, name, content, namespace="", contains_phi=False):
+        file_path = os.path.join(namespace, name) if namespace else name
+        action = "SAVE" if contains_phi else "FILE_SAVE"
+        self._log_audit(action, file_path)
+
         if contains_phi:
-            self._log_audit("SAVE", os.path.join(namespace, name) if namespace else name)
             return self.baa_adapter.save(name, content, namespace)
         return self.primary_adapter.save(name, content, namespace)
 
     def exists(self, path, contains_phi=None):
+        if contains_phi is None:
+            raise ValueError("contains_phi must be explicitly specified (True or False) for exists()")
         if contains_phi is True:
             return self.baa_adapter.exists(path)
         if contains_phi is False:
             return self.primary_adapter.exists(path)
-        return self.baa_adapter.exists(path) or self.primary_adapter.exists(path)
 
     def get_absolute_path(self, path, contains_phi=None):
-        if contains_phi is True or (contains_phi is None and self.baa_adapter.exists(path)):
+        if contains_phi is None:
+            raise ValueError("contains_phi must be explicitly specified (True or False) for get_absolute_path()")
+        if contains_phi is True:
             return self.baa_adapter.get_absolute_path(path)
         return self.primary_adapter.get_absolute_path(path)
 
     def open(self, path, mode="rb", contains_phi=None):
-        if contains_phi is True or (contains_phi is None and self.baa_adapter.exists(path)):
+        if contains_phi is None:
+            raise ValueError("contains_phi must be explicitly specified (True or False) for open()")
+        if contains_phi is True:
             self._log_audit(f"OPEN({mode})", path)
             return self.baa_adapter.open(path, mode)
+        # Also audit non-PHI accesses
+        self._log_audit(f"OPEN({mode})", path)
         return self.primary_adapter.open(path, mode)
 
 
@@ -182,6 +248,7 @@ _primary_adapter = UnifiedStorageAdapter(base_dir=media_root)
 _baa_adapter = UnifiedStorageAdapter(base_dir=baa_root)
 
 storage_adapter = ComplianceStorageProxy(_primary_adapter, _baa_adapter)
+
 
 def get_storage_adapter():
     return storage_adapter

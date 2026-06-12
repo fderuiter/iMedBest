@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0013_study_pii_masking_enabled"),
     ]
@@ -17,8 +16,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="synctask",
             name="dependencies",
-            field=models.ManyToManyField(
-                blank=True, related_name="dependents", to="clinical.synctask"
-            ),
+            field=models.ManyToManyField(blank=True, related_name="dependents", to="clinical.synctask"),
         ),
     ]

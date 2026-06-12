@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 def backfill_null_providers(apps, schema_editor):
     """Backfill NULL provider fields before altering to NOT NULL."""
-    Provider = apps.get_model('clinical', 'Provider')
+    Provider = apps.get_model("clinical", "Provider")
 
     # Get a default provider to assign to existing NULL records
     default_provider = Provider.objects.first()
@@ -22,14 +22,24 @@ def backfill_null_providers(apps, schema_editor):
 
     # List of models with provider FK that will be altered to NOT NULL
     model_names = [
-        'BufferedOrphan', 'Coding', 'Form', 'Interval', 'Query',
-        'Record', 'RecordRevision', 'Site', 'Study', 'Subject',
-        'SyncJob', 'Variable', 'Visit'
+        "BufferedOrphan",
+        "Coding",
+        "Form",
+        "Interval",
+        "Query",
+        "Record",
+        "RecordRevision",
+        "Site",
+        "Study",
+        "Subject",
+        "SyncJob",
+        "Variable",
+        "Visit",
     ]
 
     for model_name in model_names:
         try:
-            Model = apps.get_model('clinical', model_name)
+            Model = apps.get_model("clinical", model_name)
             # Update NULL provider fields to the default provider
             null_count = Model.objects.filter(provider__isnull=True).update(provider=default_provider)
             if null_count > 0:
@@ -44,7 +54,6 @@ def reverse_backfill_null_providers(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0013_study_pii_masking_enabled"),
     ]
@@ -55,92 +64,66 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name="bufferedorphan",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.CASCADE, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="coding",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="form",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="interval",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="query",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="record",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="recordrevision",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="site",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="study",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="subject",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="syncjob",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.CASCADE, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="variable",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"),
         ),
         migrations.AlterField(
             model_name="visit",
             name="provider",
-            field=models.ForeignKey(
-                on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"
-            ),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to="clinical.provider"),
         ),
     ]

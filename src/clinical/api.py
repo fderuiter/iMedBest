@@ -1,4 +1,5 @@
 # ruff: noqa: ERA001
+import json
 import logging
 
 import ninja.orm
@@ -8,6 +9,9 @@ from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
 from ninja.security import APIKeyHeader, HttpBearer
 from pydantic.alias_generators import to_camel
+
+from clinical.storage import get_storage_adapter
+from clinical.tasks import process_direct_data_job
 
 ninja.schema.Schema.model_config["alias_generator"] = to_camel
 ninja.schema.Schema.model_config["populate_by_name"] = True
@@ -37,6 +41,7 @@ class JWTBearer(HttpBearer):
         user = decode_jwt_token(token)
         if user:
             from clinical.models import Provider
+
             try:
                 provider = Provider.objects.get(id=provider_id)
             except (Provider.DoesNotExist, ValueError):
@@ -91,13 +96,16 @@ class IMednetAPIAuth(APIKeyHeader):
 
             if not provider_id:
                 from ninja.errors import HttpError
+
                 raise HttpError(400, "Missing valid provider context")
 
             from clinical.models import Provider
+
             try:
                 provider = Provider.objects.get(id=provider_id)
             except (Provider.DoesNotExist, ValueError):
                 from ninja.errors import HttpError
+
                 raise HttpError(400, "Invalid provider context") from None
 
             # We don't mandate studyKey for every single request in auth,
@@ -531,7 +539,6 @@ def get_accessible_subjects(request):
     return qs.filter(Q(site__study_id__in=auditor_study_ids) | Q(site_id__in=investigator_site_ids)).distinct()
 
 
-import json
 from typing import Any
 
 from django.core.exceptions import PermissionDenied
@@ -564,7 +571,7 @@ def _queue_single_task(request, entity_type: str, payload_obj) -> tuple[int, Any
             result = adapter.sync_entity(request, entity_type, payload_dict)
             if isinstance(result, tuple) and len(result) == 2 and result[0] == 202:
                 task.status = "BUFFERED"
-                job.status = "PROCESSING" # Job stays processing until orphan resolved
+                job.status = "PROCESSING"  # Job stays processing until orphan resolved
             else:
                 task.status = "COMPLETED"
                 job.status = "COMPLETED"
@@ -572,13 +579,13 @@ def _queue_single_task(request, entity_type: str, payload_obj) -> tuple[int, Any
             job.save(update_fields=["status"])
 
         from clinical.tasks import run_validation_for_job
+
         run_validation_for_job.delay(job.id)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
     except Exception as e:
         return 400, {"message": f"Sync failed. No data was saved. Error: {e!s}"}
-
 
 
 def mask_pii_for_user(request, data):
@@ -604,6 +611,7 @@ def mask_pii_for_user(request, data):
                 if val:
                     setattr(obj, field, "[REDACTED]")
     return data
+
 
 # --- Endpoints ---
 
@@ -649,38 +657,56 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
         with transaction.atomic():
             job = SyncJob.objects.create(user=request.user, provider=provider, status="PENDING")
 
-            # Create tasks, and map their temporary IDs to set dependencies
-            task_objects = []
-            entity_type_to_task = {}
-            for entity in sorted_entities:
-                task = SyncTask(
-                    job=job,
-                    entity_type=entity.entity_type,
-                    payload=entity.payload,
-                    status="PENDING",
-                )
-                task.save()
-                task_objects.append(task)
-                # Keep a list of tasks per entity type to resolve dependencies
-                entity_type_to_task.setdefault(entity.entity_type, []).append(task)
+            if len(payload.entities) > 2000:
+                adapter = get_storage_adapter()
+                raw_data_list = []
+                for e in payload.entities:
+                    e_dict = e.model_dump()
+                    # Metadata stripping during file generation to avoid middleware bottlenecks
+                    e_dict.get("payload", {}).pop("metadata", None)
+                    raw_data_list.append(e_dict)
 
-            # Assign DAG dependencies dynamically based on Provider definition
-            dependencies_map = get_provider_dependencies(provider)
-            for task in task_objects:
-                parent_types = dependencies_map.get(task.entity_type, [])
-                for parent_type in parent_types:
-                    parent_tasks = entity_type_to_task.get(parent_type, [])
-                    for pt in parent_tasks:
-                        task.dependencies.add(pt)
+                try:
+                    raw_data = json.dumps(raw_data_list)
+                    job.file_path = adapter.save(f"sync_job_{job.id}.json", raw_data, namespace="sync_jobs")
+                    job.save(update_fields=["file_path"])
+                    process_direct_data_job.delay(job.id)
+                except Exception as e:
+                    logger.error(f"Failed to process and save bulk sync payload for job {job.id}: {e}", exc_info=True)
+                    job.status = "FAILED"
+                    job.save(update_fields=["status"])
+            else:
+                # Create tasks, and map their temporary IDs to set dependencies
+                task_objects = []
+                entity_type_to_task = {}
+                for entity in sorted_entities:
+                    task = SyncTask(
+                        job=job,
+                        entity_type=entity.entity_type,
+                        payload=entity.payload,
+                        status="PENDING",
+                    )
+                    task.save()
+                    task_objects.append(task)
+                    # Keep a list of tasks per entity type to resolve dependencies
+                    entity_type_to_task.setdefault(entity.entity_type, []).append(task)
 
-        # Trigger celery orchestrator
-        from clinical.tasks import orchestrate_sync_job
-        orchestrate_sync_job.delay(job.id)
+                # Assign DAG dependencies dynamically based on Provider definition
+                dependencies_map = get_provider_dependencies(provider)
+                for task in task_objects:
+                    parent_types = dependencies_map.get(task.entity_type, [])
+                    for parent_type in parent_types:
+                        parent_tasks = entity_type_to_task.get(parent_type, [])
+                        for pt in parent_tasks:
+                            task.dependencies.add(pt)
+
+                # Trigger celery orchestrator
+                from clinical.tasks import orchestrate_sync_job
+
+                orchestrate_sync_job.delay(job.id)
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
-        return 200, SyncJobResponse(
-            job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url
-        )
+        return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
     except Exception as e:
         return 400, {"message": f"Sync failed. Error: {e!s}"}
 
@@ -1065,6 +1091,7 @@ def sync_query(request, payload: QuerySchemaIn):
         # Bi-directional state sync for validation
         if query.status == "RESOLVED":
             from clinical.models import ValidationResult
+
             ValidationResult.objects.filter(query=query).update(passed=True)
     else:
         query = Query.objects.create(
@@ -1100,6 +1127,7 @@ def update_query(request, query_id: int, payload: QueryUpdateIn, studyKey: str |
 
     if query.status == "RESOLVED":
         from clinical.models import ValidationResult
+
         ValidationResult.objects.filter(query=query).update(passed=True)
 
     from django.core.cache import cache
@@ -1235,8 +1263,10 @@ def _reprocess_orphan(orphan):
     result = adapter.sync_entity(req, orphan.entity_type, orphan.payload)
 
     if not (isinstance(result, tuple) and len(result) == 2 and result[0] == 202):
-        from .models import SyncTask
         from audit.models import AuditLog
+
+        from .models import SyncTask
+
         tasks = SyncTask.objects.filter(status="BUFFERED", entity_type=orphan.entity_type)
         for task in tasks:
             if task.payload == orphan.payload:
@@ -1250,9 +1280,11 @@ def _reprocess_orphan(orphan):
                     changes={
                         "status": ["BUFFERED", "COMPLETED"],
                         "resolving_parent_record": orphan.missing_parent_id,
-                    }
+                    },
                 )
-                logger.info("Transitioned buffered task %s to COMPLETED via parent %s", task.id, orphan.missing_parent_id)
+                logger.info(
+                    "Transitioned buffered task %s to COMPLETED via parent %s", task.id, orphan.missing_parent_id
+                )
 
     orphan.delete()
 
@@ -1431,12 +1463,14 @@ class StripSyncMetadataMiddleware:
                     pass
         return response
 
+
 @router.get("/validation/dashboard-summary")
 def get_validation_dashboard(request, studyKey: str | None = None):
     # Filter by provider to prevent cross-tenant data leaks
     provider = getattr(request, "provider", None)
     if not provider:
         from ninja.errors import HttpError
+
         raise HttpError(400, "Missing provider context")
 
     # Start with tenant-scoped queryset filtering by provider via job
@@ -1453,12 +1487,7 @@ def get_validation_dashboard(request, studyKey: str | None = None):
 
     total_checks = qs.count()
     if total_checks == 0:
-        return {
-            "passed_percentage": 100.0,
-            "total_checks": 0,
-            "failed_checks": 0,
-            "passed_checks": 0
-        }
+        return {"passed_percentage": 100.0, "total_checks": 0, "failed_checks": 0, "passed_checks": 0}
     passed_checks = qs.filter(passed=True).count()
     failed_checks = total_checks - passed_checks
     passed_percentage = (passed_checks / total_checks) * 100.0
@@ -1467,18 +1496,21 @@ def get_validation_dashboard(request, studyKey: str | None = None):
         "passed_percentage": round(passed_percentage, 2),
         "total_checks": total_checks,
         "failed_checks": failed_checks,
-        "passed_checks": passed_checks
+        "passed_checks": passed_checks,
     }
+
 
 class ValidationRuleSchemaIn(ModelSchema):
     class Meta:
         model = ValidationRule
         fields = ["name", "description", "rule_dsl", "is_active", "version"]
 
+
 class ValidationRuleSchemaOut(ModelSchema):
     class Meta:
         model = ValidationRule
         fields = ["id", "name", "description", "rule_dsl", "is_active", "version", "created_at", "updated_at"]
+
 
 @router.post("/validation-rules", response=ValidationRuleSchemaOut)
 def create_validation_rule(request, payload: ValidationRuleSchemaIn):
@@ -1487,6 +1519,7 @@ def create_validation_rule(request, payload: ValidationRuleSchemaIn):
 
     if not (request.user.is_staff or request.user.is_superuser):
         from ninja.errors import HttpError
+
         raise HttpError(403, "Admin access required to create validation rules.")
 
     rule = ValidationRule.objects.create(
@@ -1494,9 +1527,10 @@ def create_validation_rule(request, payload: ValidationRuleSchemaIn):
         description=payload.description,
         rule_dsl=payload.rule_dsl,
         is_active=payload.is_active,
-        version=payload.version
+        version=payload.version,
     )
     return rule
+
 
 @router.get("/validation-rules", response=list[ValidationRuleSchemaOut])
 def list_validation_rules(request):

@@ -115,6 +115,71 @@ def process_next_ready_tasks(self, job_id):
             check_level_completion.apply_async((job_id,), countdown=2)
 
 
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
+def process_direct_data_job(self, job_id):
+    job = SyncJob.objects.get(id=job_id)
+    if job.status == "FAILED":
+        return
+
+    job.status = "PROCESSING"
+    job.save(update_fields=["status"])
+
+    try:
+        import json
+
+        from django.db import transaction
+
+        from audit.middleware import get_current_request
+        from clinical.adapter import MultiVendorAdapter
+        from clinical.graph import topological_sort_entities
+        from clinical.schemas import EntityPayload
+        from clinical.storage import get_storage_adapter
+
+        request = get_current_request()
+        if request is None:
+            from django.contrib.auth.models import AnonymousUser
+
+            class _SystemRequest:
+                user = AnonymousUser()
+                user_roles: list = []
+                provider = job.provider
+                META: dict = {}
+
+            request = _SystemRequest()
+
+        adapter_instance = MultiVendorAdapter(job.provider)
+        storage_adapter = get_storage_adapter()
+
+        if not job.file_path or not storage_adapter.exists(job.file_path):
+            raise FileNotFoundError("Direct Data payload file missing")
+
+        with storage_adapter.open(job.file_path, "rb") as f:
+            raw_data = json.load(f)
+
+        entities = [EntityPayload(**ent) for ent in raw_data]
+
+        orphaned_count = 0
+        with transaction.atomic():
+            sorted_entities = topological_sort_entities(entities, job.provider)
+
+            # Process each entity linearly
+            for entity in sorted_entities:
+                response = adapter_instance.sync_entity(request, entity.entity_type, entity.payload)
+                if isinstance(response, tuple) and response[0] == 202:
+                    orphaned_count += 1
+
+        if orphaned_count > 0:
+            job.status = "PARTIAL"
+        else:
+            job.status = "COMPLETED"
+        job.save(update_fields=["status"])
+        run_validation_for_job.delay(job.id)
+    except Exception as exc:
+        job.status = "FAILED"
+        job.error_message = str(exc)
+        job.save(update_fields=["status", "error_message"])
+
+
 @shared_task(bind=True, max_retries=5, acks_late=True, reject_on_worker_lost=True)
 def process_single_task(self, task_id):
     task = SyncTask.objects.get(id=task_id)
@@ -357,4 +422,5 @@ def export_cdisc_task(job_id):
 @shared_task
 def run_validation_for_job(job_id):
     from clinical.validation.engine import execute_validation_for_job
+
     execute_validation_for_job(job_id)

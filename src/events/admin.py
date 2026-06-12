@@ -1,7 +1,6 @@
 from django.contrib import admin
 
 from .models import DeliveryAttempt, OutboundEvent, Subscription
-from .tasks import process_delivery_attempt
 
 
 @admin.register(Subscription)

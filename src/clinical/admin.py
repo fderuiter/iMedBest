@@ -8,9 +8,10 @@ from .models import SyncJob, SyncTask
 
 @admin.register(SyncJob)
 class SyncJobAdmin(admin.ModelAdmin):
-    list_display = ("id", "status", "user", "created_at", "updated_at")
+    list_display = ("id", "status", "user", "file_path", "created_at", "updated_at")
     list_filter = ("status", "created_at")
-    search_fields = ("id", "user__username")
+    search_fields = ("id", "user__username", "file_path")
+    readonly_fields = ("file_path",)
 
     def changelist_view(self, request, extra_context=None):
         yesterday = timezone.now() - timedelta(hours=24)

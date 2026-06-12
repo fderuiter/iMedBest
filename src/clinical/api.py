@@ -1,4 +1,5 @@
 # ruff: noqa: ERA001
+import json
 import logging
 
 import ninja.orm
@@ -8,6 +9,9 @@ from django.shortcuts import get_object_or_404
 from ninja import ModelSchema, Router
 from ninja.security import APIKeyHeader, HttpBearer
 from pydantic.alias_generators import to_camel
+
+from clinical.storage import get_storage_adapter
+from clinical.tasks import process_direct_data_job
 
 ninja.schema.Schema.model_config["alias_generator"] = to_camel
 ninja.schema.Schema.model_config["populate_by_name"] = True
@@ -535,7 +539,6 @@ def get_accessible_subjects(request):
     return qs.filter(Q(site__study_id__in=auditor_study_ids) | Q(site_id__in=investigator_site_ids)).distinct()
 
 
-import json
 from typing import Any
 
 from django.core.exceptions import PermissionDenied
@@ -654,34 +657,60 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
         with transaction.atomic():
             job = SyncJob.objects.create(user=request.user, provider=provider, status="PENDING")
 
-            # Create tasks, and map their temporary IDs to set dependencies
-            task_objects = []
-            entity_type_to_task = {}
-            for entity in sorted_entities:
-                task = SyncTask(
-                    job=job,
-                    entity_type=entity.entity_type,
-                    payload=entity.payload,
-                    status="PENDING",
-                )
-                task.save()
-                task_objects.append(task)
-                # Keep a list of tasks per entity type to resolve dependencies
-                entity_type_to_task.setdefault(entity.entity_type, []).append(task)
+            if len(payload.entities) > 2000:
+                adapter = get_storage_adapter()
+                raw_data_list = []
+                for e in payload.entities:
+                    e_dict = e.model_dump()
+                    # Metadata stripping during file generation to avoid middleware bottlenecks
+                    e_dict.get("payload", {}).pop("metadata", None)
+                    raw_data_list.append(e_dict)
 
-            # Assign DAG dependencies dynamically based on Provider definition
-            dependencies_map = get_provider_dependencies(provider)
-            for task in task_objects:
-                parent_types = dependencies_map.get(task.entity_type, [])
-                for parent_type in parent_types:
-                    parent_tasks = entity_type_to_task.get(parent_type, [])
-                    for pt in parent_tasks:
-                        task.dependencies.add(pt)
+                try:
+                    raw_data = json.dumps(raw_data_list)
+                    job.file_path = adapter.save(f"sync_job_{job.id}.json", raw_data, namespace="sync_jobs")
+                    job.save(update_fields=["file_path"])
+                    process_direct_data_job.delay(job.id)
+                except Exception as e:
+                    logger.error(f"Failed to process and save bulk sync payload for job {job.id}: {e}", exc_info=True)
+                    job.status = "FAILED"
+                    job.save(update_fields=["status"])
+            else:
+                # Create tasks, and map their temporary IDs to set dependencies
+                task_objects = []
+                entity_type_to_task = {}
+                for entity in sorted_entities:
+                    task = SyncTask(
+                        job=job,
+                        entity_type=entity.entity_type,
+                        payload=entity.payload,
+                        status="PENDING",
+                    )
+                    task.save()
+                    task_objects.append(task)
+                    # Keep a list of tasks per entity type to resolve dependencies
+                    entity_type_to_task.setdefault(entity.entity_type, []).append(task)
 
+<<<<<<< HEAD
         # Trigger celery orchestrator
         from clinical.tasks import orchestrate_sync_job
 
         orchestrate_sync_job.delay(job.id)
+=======
+                # Assign DAG dependencies dynamically based on Provider definition
+                dependencies_map = get_provider_dependencies(provider)
+                for task in task_objects:
+                    parent_types = dependencies_map.get(task.entity_type, [])
+                    for parent_type in parent_types:
+                        parent_tasks = entity_type_to_task.get(parent_type, [])
+                        for pt in parent_tasks:
+                            task.dependencies.add(pt)
+
+                # Trigger celery orchestrator
+                from clinical.tasks import orchestrate_sync_job
+
+                orchestrate_sync_job.delay(job.id)
+>>>>>>> origin/main
 
         status_url = f"/api/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)

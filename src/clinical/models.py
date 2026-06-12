@@ -347,6 +347,12 @@ class SyncJob(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     error_message = models.TextField(blank=True, null=True)
+    file_path = models.CharField(
+        max_length=500,
+        null=True,
+        blank=True,
+        help_text="Relative path in the storage adapter for bulk ingestion payloads (>2000 entities), set upon upload.",
+    )
 
     def __str__(self):
         return f"Job {self.id} - {self.status}"

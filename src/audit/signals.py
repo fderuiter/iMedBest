@@ -7,6 +7,7 @@ from django.forms.models import model_to_dict
 from .middleware import get_current_request
 from .tasks import create_audit_log_task
 from .utils import extract_study_id
+from .context import get_audit_context
 
 EXCLUDED_MODELS = ["AuditLog", "Session", "LogEntry", "ContentType", "Permission", "Group", "Revision", "Migration"]
 
@@ -54,6 +55,7 @@ def create_audit_log(action, instance, changes=None):
         ip_address=ip_address,
         user_agent=user_agent,
         study_id=study_id,
+        **get_audit_context()
     )
 
 

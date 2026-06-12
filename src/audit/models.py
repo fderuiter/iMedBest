@@ -18,6 +18,12 @@ class AuditLog(models.Model):
     object_id = models.CharField(max_length=255, null=True, blank=True)
     changes = models.JSONField(null=True, blank=True)
 
+    agent_did = models.CharField(max_length=255, null=True, blank=True)
+    supervisor_did = models.CharField(max_length=255, null=True, blank=True)
+    external_transaction_id = models.CharField(max_length=255, null=True, blank=True, db_index=True)
+    cryptographic_signature = models.TextField(null=True, blank=True)
+    rejection_reason = models.TextField(null=True, blank=True)
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
     study = models.ForeignKey("clinical.Study", null=True, blank=True, on_delete=models.PROTECT, db_index=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)

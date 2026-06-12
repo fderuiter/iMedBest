@@ -1,5 +1,6 @@
 import csv
 import io
+import hashlib
 
 from django.http import HttpResponse, HttpResponseForbidden
 from ninja import Router
@@ -73,4 +74,69 @@ def export_audit_log(
         )
     response = HttpResponse(buffer.getvalue(), content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="audit_log.csv"'
+    return response
+
+
+@router.get("/reconciliation_report")
+def reconciliation_report(request, study_id: str | None = None):
+    from users.models import StudyMembership
+
+    is_admin = request.user.is_staff or request.user.is_superuser
+
+    if not study_id:
+        if not is_admin:
+            return HttpResponseForbidden("A valid study_id is required to export reconciliation report.")
+    elif not is_admin:
+        has_role = StudyMembership.objects.filter(
+            user=request.user, study_id=study_id, role__in=["clinical_auditor", "investigator"]
+        ).exists()
+        if not has_role:
+            return HttpResponseForbidden("You do not have permission to export reconciliation report for this study.")
+
+    # Filter for entries that have an external_transaction_id
+    qs = AuditLog.objects.exclude(external_transaction_id__isnull=True).exclude(external_transaction_id="")
+    if study_id:
+        qs = qs.filter(study_id=study_id)
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "Timestamp",
+            "Action",
+            "Model",
+            "Object ID",
+            "Changes",
+            "Agent DID",
+            "Supervisor DID",
+            "External Transaction ID",
+            "Cryptographic Signature",
+            "Rejection Reason",
+        ]
+    )
+
+    for log in qs:
+        writer.writerow(
+            [
+                log.timestamp.isoformat(),
+                log.action,
+                log.model_name,
+                log.object_id,
+                str(log.changes),
+                log.agent_did or "",
+                log.supervisor_did or "",
+                log.external_transaction_id or "",
+                log.cryptographic_signature or "",
+                log.rejection_reason or "",
+            ]
+        )
+
+    csv_content = buffer.getvalue()
+    content_hash = hashlib.sha256(csv_content.encode('utf-8')).hexdigest()
+    
+    final_content = csv_content + f"\n# SHA256 HASH: {content_hash}\n"
+    
+    response = HttpResponse(final_content, content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="reconciliation_report.csv"'
+    response["X-Report-Hash"] = content_hash
     return response

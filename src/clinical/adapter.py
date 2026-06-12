@@ -42,6 +42,25 @@ class MultiVendorAdapter:
         return mapping.get(model_name)
 
     def sync_entity(self, request, raw_type, payload):
+        from audit.context import set_audit_context
+
+        audit_kwargs = {}
+        if isinstance(payload, dict):
+            if "agent_did" in payload:
+                audit_kwargs["agent_did"] = payload.get("agent_did")
+            if "supervisor_did" in payload:
+                audit_kwargs["supervisor_did"] = payload.get("supervisor_did")
+            if "external_transaction_id" in payload:
+                audit_kwargs["external_transaction_id"] = payload.get("external_transaction_id")
+            if "cryptographic_signature" in payload:
+                audit_kwargs["cryptographic_signature"] = payload.get("cryptographic_signature")
+            if "rejection_reason" in payload:
+                audit_kwargs["rejection_reason"] = payload.get("rejection_reason")
+
+        with set_audit_context(**audit_kwargs):
+            return self._sync_entity_impl(request, raw_type, payload)
+
+    def _sync_entity_impl(self, request, raw_type, payload):
         entity_type = self.resolve_entity_type(raw_type)
         mapped_payload = self.map_payload(raw_type, payload)
 

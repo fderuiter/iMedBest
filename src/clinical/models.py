@@ -38,7 +38,6 @@ class ClinicalEntityQuerySet(models.QuerySet):
     def hard_delete(self):
         return super().delete()
 
-
     def restore(self):
         for obj in self:
             obj.restore()
@@ -75,15 +74,16 @@ class ClinicalEntity(models.Model):
 
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    contains_phi = models.BooleanField(
+        default=False, help_text="Indicates if this entity contains Protected Health Information (PHI)."
+    )
 
     objects = ActiveManager()
     all_objects = AllManager()
 
-
     class Meta:
         abstract = True
         constraints: ClassVar[list] = [
-
             models.UniqueConstraint(
                 fields=["provider", "external_id"], name="%(app_label)s_%(class)s_unique_provider_external_id"
             )
@@ -104,7 +104,6 @@ class ClinicalEntity(models.Model):
                         filter_kwargs = {related_object.field.name: self}
                         for child in related_model.all_objects.filter(**filter_kwargs, is_deleted=False):
                             child.delete(deleted_at=self.deleted_at)
-
 
     def get_study(self):
         if isinstance(self, Study):
@@ -166,6 +165,7 @@ class ClinicalEntity(models.Model):
 
 
 # Level 1
+
 
 class Study(ClinicalEntity):
     name = models.CharField(max_length=255)
@@ -284,7 +284,6 @@ class RecordRevision(ClinicalEntity):
         return self.record.visit.subject
 
 
-
 @receiver(post_save, sender=Record)
 def create_record_revision(sender, instance, created, **kwargs):
     value_to_save = instance.value
@@ -310,7 +309,6 @@ def create_record_revision(sender, instance, created, **kwargs):
         created_by=instance.updated_by,
         updated_by=instance.updated_by,
     )
-
 
 
 @receiver(post_save, sender=Visit)
@@ -353,6 +351,12 @@ class SyncJob(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     error_message = models.TextField(blank=True, null=True)
+    file_path = models.CharField(
+        max_length=500,
+        null=True,
+        blank=True,
+        help_text="Relative path in the storage adapter for bulk ingestion payloads (>2000 entities), set upon upload.",
+    )
 
     def __str__(self):
         return f"Job {self.id} - {self.status}"
@@ -389,6 +393,7 @@ class ExportJob(models.Model):
     user = models.ForeignKey("users.User", on_delete=models.CASCADE)
     status = models.CharField(max_length=50, default="PENDING")  # PENDING, PROCESSING, COMPLETED, FAILED
     file_path = models.CharField(max_length=500, null=True, blank=True)
+    contains_phi = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(null=True, blank=True)
@@ -409,9 +414,7 @@ class ValidationRule(models.Model):
 
 class ValidationResult(models.Model):
     rule = models.ForeignKey(ValidationRule, on_delete=models.CASCADE, related_name="results")
-    job = models.ForeignKey(
-        SyncJob, on_delete=models.CASCADE, null=True, blank=True, related_name="validation_results"
-    )
+    job = models.ForeignKey(SyncJob, on_delete=models.CASCADE, null=True, blank=True, related_name="validation_results")
     passed = models.BooleanField(default=True)
     error_message = models.TextField(blank=True, null=True)
     query = models.ForeignKey(

@@ -46,7 +46,8 @@ def archive_instance_and_descendants(instance):
     filename = f"archive_{instance.__class__.__name__}_{instance.external_id}_{timestamp}_{rand_id}.json"
 
     adapter = get_storage_adapter()
-    return adapter.save(filename, data_str, namespace="archives")
+    contains_phi = any(getattr(obj, "contains_phi", False) for obj in objects_to_serialize)
+    return adapter.save(filename, data_str, namespace="archives", contains_phi=contains_phi)
 
 
 @receiver(pre_delete)

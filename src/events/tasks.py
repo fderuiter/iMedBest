@@ -55,9 +55,7 @@ def process_delivery_attempt(self, attempt_id):
         try:
             if self.request.retries < self.max_retries:
                 new_attempt = DeliveryAttempt.objects.create(
-                    event=attempt.event,
-                    subscription=attempt.subscription,
-                    status="PENDING"
+                    event=attempt.event, subscription=attempt.subscription, status="PENDING"
                 )
                 raise self.retry(exc=e, countdown=2**self.request.retries, args=[new_attempt.id])
         except self.MaxRetriesExceededError:

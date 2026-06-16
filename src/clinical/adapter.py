@@ -42,6 +42,37 @@ class MultiVendorAdapter:
         }
         return mapping.get(model_name)
 
+    def to_fhir(self, raw_type, payload, fhir_resource_type=None):
+        """Map raw payload directly to a FHIR R4 resource."""
+        entity_type = self.resolve_entity_type(raw_type)
+        mapped = self.map_payload(raw_type, payload)
+
+        if fhir_resource_type == "MedicationStatement":
+            return {
+                "resourceType": "MedicationStatement",
+                "id": mapped.get("external_id", "unknown"),
+                "status": "active",
+                "medicationCodeableConcept": {"text": str(mapped.get("value")) if mapped.get("value") else ""}
+            }
+        elif fhir_resource_type == "Observation" or entity_type == "Record":
+            return {
+                "resourceType": "Observation",
+                "id": mapped.get("external_id", "unknown"),
+                "status": "final",
+                "valueString": str(mapped.get("value")) if mapped.get("value") else ""
+            }
+        elif fhir_resource_type == "Patient" or entity_type == "Subject":
+            return {
+                "resourceType": "Patient",
+                "id": mapped.get("external_id", "unknown"),
+                "name": [{"text": mapped.get("name")}] if mapped.get("name") else []
+            }
+        else:
+            return {
+                "resourceType": fhir_resource_type or "Basic",
+                "id": mapped.get("external_id", "unknown")
+            }
+
     def sync_entity(self, request, raw_type, payload):
         entity_type = self.resolve_entity_type(raw_type)
         mapped_payload = self.map_payload(raw_type, payload)
@@ -58,11 +89,12 @@ class MultiVendorAdapter:
         }
 
         # Additional scalar fields depending on model
-        for field in ["clinical_timestamp", "source_sequence", "name", "value", "code", "text"]:
+        for field in ["clinical_timestamp", "source_sequence", "name", "value", "code", "text", "contains_phi"]:
             if field in mapped_payload:
                 val = mapped_payload[field]
                 if field == "clinical_timestamp" and val and isinstance(val, str):
                     from django.utils.dateparse import parse_datetime
+
                     parsed_val = parse_datetime(val)
                     # Only set clinical_timestamp if parsing succeeded
                     if parsed_val:

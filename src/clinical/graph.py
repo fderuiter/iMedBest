@@ -16,6 +16,7 @@ def get_provider_dependencies(provider):
         return provider.hierarchy_mapping
     return default_mapping
 
+
 def topological_sort_entities(entities, provider):
     dependencies = get_provider_dependencies(provider)
 
@@ -45,4 +46,3 @@ def topological_sort_entities(entities, provider):
     # Sort entities by their computed depth
     # If same depth, maintain original order
     return sorted(entities, key=lambda e: depths.get(e.entity_type, 99))
-

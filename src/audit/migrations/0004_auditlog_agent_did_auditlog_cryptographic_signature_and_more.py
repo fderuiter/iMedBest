@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("audit", "0003_auditlog_study"),
     ]
@@ -23,9 +22,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="auditlog",
             name="external_transaction_id",
-            field=models.CharField(
-                blank=True, db_index=True, max_length=255, null=True
-            ),
+            field=models.CharField(blank=True, db_index=True, max_length=255, null=True),
         ),
         migrations.AddField(
             model_name="auditlog",

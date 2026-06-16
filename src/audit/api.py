@@ -141,7 +141,7 @@ def reconciliation_report(request, study_id: str | None = None):
         )
 
     csv_content = buffer.getvalue()
-    content_hash = hashlib.sha256(csv_content.encode('utf-8')).hexdigest()
+    content_hash = hashlib.sha256(csv_content.encode("utf-8")).hexdigest()
     response = HttpResponse(csv_content, content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="reconciliation_report.csv"'
     response["X-Report-Hash"] = content_hash

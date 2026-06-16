@@ -19,7 +19,6 @@ def get_client_ip(request):
     return request.META.get("REMOTE_ADDR")
 
 
-
 def create_audit_log(action, instance, changes=None):
     model_name = instance.__class__.__name__
     if model_name in EXCLUDED_MODELS:
@@ -47,13 +46,15 @@ def create_audit_log(action, instance, changes=None):
                         changes[field]["new"] = "[REDACTED]"
 
     context = get_audit_context()
-    context.update({
-        "changes": changes,
-        "user_id": user.pk if user else None,
-        "ip_address": ip_address,
-        "user_agent": user_agent,
-        "study_id": study_id,
-    })
+    context.update(
+        {
+            "changes": changes,
+            "user_id": user.pk if user else None,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+            "study_id": study_id,
+        }
+    )
 
     create_audit_log_task.delay(
         action=action,
@@ -130,7 +131,7 @@ def log_login(sender, request, user, **kwargs):
             "user_id": user.pk if user else None,
             "ip_address": ip_address,
             "user_agent": user_agent,
-        }
+        },
     )
 
 
@@ -147,5 +148,5 @@ def log_logout(sender, request, user, **kwargs):
             "user_id": user.pk if user else None,
             "ip_address": ip_address,
             "user_agent": user_agent,
-        }
+        },
     )

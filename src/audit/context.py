@@ -4,6 +4,7 @@ from types import MappingProxyType
 
 _audit_context = contextvars.ContextVar("audit_context", default=MappingProxyType({}))
 
+
 @contextmanager
 def set_audit_context(**kwargs):
     old = dict(_audit_context.get())
@@ -14,6 +15,7 @@ def set_audit_context(**kwargs):
         yield
     finally:
         _audit_context.reset(token)
+
 
 def get_audit_context():
     return dict(_audit_context.get())

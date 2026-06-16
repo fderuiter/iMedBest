@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0013_study_pii_masking_enabled"),
     ]
@@ -27,9 +26,7 @@ class Migration(migrations.Migration):
                 ("description", models.TextField(blank=True, null=True)),
                 (
                     "rule_dsl",
-                    models.JSONField(
-                        help_text="JSON DSL for defining validation logic"
-                    ),
+                    models.JSONField(help_text="JSON DSL for defining validation logic"),
                 ),
                 ("is_active", models.BooleanField(default=True)),
                 ("version", models.IntegerField(default=1)),

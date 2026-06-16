@@ -40,7 +40,7 @@ class AuditMiddleware:
                             "user_id": None,
                             "ip_address": ip_address,
                             "user_agent": user_agent,
-                        }
+                        },
                     )
                 elif request.method == "GET" and response.status_code == 200:
                     user = getattr(request, "user", None)
@@ -54,7 +54,7 @@ class AuditMiddleware:
                                 "user_id": user.pk,
                                 "ip_address": ip_address,
                                 "user_agent": user_agent,
-                            }
+                            },
                         )
 
             return response

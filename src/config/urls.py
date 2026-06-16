@@ -21,16 +21,18 @@ def custom_operation_init(self, *args, **kwargs):
 
 ninja.operation.Operation.__init__ = custom_operation_init
 
+from django.http import HttpResponse
 from ninja import NinjaAPI
 
 from audit.api import router as audit_router
 from clinical.api import router as clinical_router
 from clinical.views import DashboardView, RetriggerTimelineTaskView
 from users.api import router as users_router
-from django.http import HttpResponse
+
 
 def health_check(request):
     return HttpResponse("OK", status=200)
+
 
 api = NinjaAPI()
 api.add_router("/clinical/", clinical_router, tags=["legacy"], url_name_prefix="legacy")

@@ -357,4 +357,5 @@ def export_cdisc_task(job_id):
 @shared_task
 def run_validation_for_job(job_id):
     from clinical.validation.engine import execute_validation_for_job
+
     execute_validation_for_job(job_id)

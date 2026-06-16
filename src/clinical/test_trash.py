@@ -8,6 +8,7 @@ from .models import Site, Study, Subject
 
 def get_auth_headers():
     from clinical.models import Provider
+
     provider, _ = Provider.objects.get_or_create(name="Test Provider")
     User = get_user_model()
     user, _ = User.objects.get_or_create(username="test_user", is_staff=True)

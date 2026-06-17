@@ -6,6 +6,7 @@ from .models import DeliveryAttempt, OutboundEvent, Subscription
 from .serializers import get_hierarchical_batch
 from .tasks import process_delivery_attempt
 
+
 def create_event(action, instance):
     model_name = instance.__class__.__name__
 

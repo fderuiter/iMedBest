@@ -103,5 +103,4 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "users.User"
 DEFAULT_FILE_STORAGE = "hub.storage.CommerceStorageEngine"
 
-CELERY_BEAT_SCHEDULE = {
-}
+CELERY_BEAT_SCHEDULE = {}

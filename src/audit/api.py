@@ -34,9 +34,7 @@ def export_audit_log(
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(
-        ["Timestamp", "Action", "Model", "Object ID", "Changes", "User ID", "IP Address", "User Agent"]
-    )
+    writer.writerow(["Timestamp", "Action", "Model", "Object ID", "Changes", "User ID", "IP Address", "User Agent"])
 
     for log in qs:
         can_view_pii = request.user.is_staff or request.user.is_superuser or request.user.has_perm("users.view_pii")

@@ -9,6 +9,7 @@ from ninja.security import HttpBearer
 
 from users.models import OIDCConfiguration
 
+
 class JWTBearer(HttpBearer):
     def authenticate(self, request, token):
         user = decode_jwt_token(token)

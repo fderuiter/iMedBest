@@ -27,14 +27,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Run Clinical Tests
-        run: uv run pytest src/clinical/
-
-      - name: Run Event Tests
-        run: uv run pytest src/events/
-
-      - name: Run API Endpoint Tests
-        run: uv run pytest src/users/ # or other api tests
+      - name: Run All Tests
+        run: uv run pytest src/
 
   build-and-push:
     name: Build and Version Container

@@ -8,26 +8,6 @@ class User(AbstractUser):
     pass
 
 
-class SiteMembership(models.Model):
-    ROLE_CHOICES = (("site_investigator", "Site Investigator"),)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="site_memberships")
-    site = models.ForeignKey("clinical.Site", on_delete=models.CASCADE, related_name="memberships")
-    role = models.CharField(max_length=50, choices=ROLE_CHOICES)
-
-    class Meta:
-        unique_together = ("user", "site", "role")
-
-
-class StudyMembership(models.Model):
-    ROLE_CHOICES = (("clinical_auditor", "Clinical Auditor"),)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="study_memberships")
-    study = models.ForeignKey("clinical.Study", on_delete=models.CASCADE, related_name="memberships")
-    role = models.CharField(max_length=50, choices=ROLE_CHOICES)
-
-    class Meta:
-        unique_together = ("user", "study", "role")
-
-
 class OIDCConfiguration(models.Model):
     provider_name = models.CharField(max_length=255, unique=True)
     client_id = models.CharField(max_length=255)

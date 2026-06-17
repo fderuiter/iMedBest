@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hub Dashboard</title>
+</head>
+<body>
+    <h1>Hub Dashboard</h1>
+    <p>Total Agents: {{ total_agents }}</p>
+    <p>Active Agents: {{ active_agents }}</p>
+    <h2>Active Agents List</h2>
+    <ul>
+        {% for agent in agents %}
+            <li>{{ agent.name }} - {{ agent.status }} - Ping: {{ agent.last_ping }}</li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

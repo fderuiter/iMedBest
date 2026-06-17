@@ -26,14 +26,14 @@ class AuditMiddleware:
         try:
             response = self.get_response(request)
 
-            if request.path.startswith("/api/clinical"):
+            if request.path.startswith("/api/hub"):
                 ip_address = get_client_ip(request)
                 user_agent = request.META.get("HTTP_USER_AGENT")
 
                 if response.status_code == 401:
                     create_audit_log_task.delay(
                         action="UNAUTH",
-                        model_name="ClinicalAPI",
+                        model_name="HubAPI",
                         object_id=request.path,
                         changes={"error": "Unauthorized access attempt"},
                         user_id=None,
@@ -45,7 +45,7 @@ class AuditMiddleware:
                     if user and user.is_authenticated:
                         create_audit_log_task.delay(
                             action="SECURITY",  # using SECURITY or another valid choice like UPDATE/CREATE
-                            model_name="ClinicalAPI_Read",
+                            model_name="HubAPI_Read",
                             object_id=request.path,
                             changes={"method": "GET", "status": 200},
                             user_id=user.pk,

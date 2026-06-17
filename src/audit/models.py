@@ -19,7 +19,6 @@ class AuditLog(models.Model):
     changes = models.JSONField(null=True, blank=True)
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
-    study = models.ForeignKey("clinical.Study", null=True, blank=True, on_delete=models.PROTECT, db_index=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)

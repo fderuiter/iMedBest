@@ -28,7 +28,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django_celery_results",
     "users.apps.UsersConfig",
-    "clinical.apps.ClinicalConfig",
+    "hub.apps.HubConfig",
     "audit.apps.AuditConfig",
     "events.apps.EventsConfig",
 ]
@@ -51,7 +51,6 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "audit.middleware.AuditMiddleware",
-    "clinical.api.StripSyncMetadataMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -102,10 +101,7 @@ MEDIA_ROOT = ROOT_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "users.User"
+DEFAULT_FILE_STORAGE = "hub.storage.CommerceStorageEngine"
 
 CELERY_BEAT_SCHEDULE = {
-    "poll-edc-queries-every-minute": {
-        "task": "clinical.tasks.poll_edc_queries",
-        "schedule": 60.0,
-    },
 }

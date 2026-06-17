@@ -6,7 +6,6 @@ from django.forms.models import model_to_dict
 
 from .middleware import get_current_request
 from .tasks import create_audit_log_task
-from .utils import extract_study_id
 
 EXCLUDED_MODELS = ["AuditLog", "Session", "LogEntry", "ContentType", "Permission", "Group", "Revision", "Migration"]
 
@@ -31,19 +30,6 @@ def create_audit_log(action, instance, changes=None):
     ip_address = get_client_ip(request) if request else None
     user_agent = request.META.get("HTTP_USER_AGENT") if request else None
 
-    study_id = extract_study_id(instance)
-
-    # Redact tagged PII fields for masked studies
-    if changes and hasattr(instance, "pii_fields") and hasattr(instance, "get_study"):
-        study = instance.get_study()
-        if study and getattr(study, "pii_masking_enabled", False):
-            for field in instance.pii_fields:
-                if field in changes:
-                    if changes[field].get("old") is not None and changes[field]["old"] != "":
-                        changes[field]["old"] = "[REDACTED]"
-                    if changes[field].get("new") is not None and changes[field]["new"] != "":
-                        changes[field]["new"] = "[REDACTED]"
-
     create_audit_log_task.delay(
         action=action,
         model_name=model_name,
@@ -52,7 +38,6 @@ def create_audit_log(action, instance, changes=None):
         user_id=user.pk if user else None,
         ip_address=ip_address,
         user_agent=user_agent,
-        study_id=study_id,
     )
 
 

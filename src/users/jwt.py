@@ -5,8 +5,17 @@ import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from jwt import PyJWKClient
+from ninja.security import HttpBearer
 
 from users.models import OIDCConfiguration
+
+class JWTBearer(HttpBearer):
+    def authenticate(self, request, token):
+        user = decode_jwt_token(token)
+        if user:
+            request.user = user
+            return user
+        return None
 
 
 def create_jwt_token(user):

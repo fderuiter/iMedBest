@@ -6,12 +6,10 @@ def get_hierarchical_batch(instance):
     Returns a list of dictionaries representing the instance and its hierarchical ancestors,
     ordered from root to the child instance.
     """
-    from clinical.models import ClinicalEntity
-
     entities = []
 
     def traverse(obj):
-        if not obj or not isinstance(obj, ClinicalEntity):
+        if not obj:
             return
 
         # Avoid circular dependencies, just in case
@@ -47,11 +45,10 @@ def get_hierarchical_batch(instance):
                 "type": obj.__class__.__name__,
                 "id": str(obj.pk),
                 "data": data,
-                "external_id": getattr(obj, "external_id", None),
             }
             entities.append(payload)
 
     traverse(instance)
 
-    # Sort them loosely (the recursion is basically a DFS and parents are visited before self, so it's already sorted root-first)  # noqa: E501
+    # Sort them loosely
     return entities

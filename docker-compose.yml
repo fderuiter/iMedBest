@@ -18,6 +18,17 @@ services:
       timeout: 5s
       retries: 5
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: imedbest_qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - imedbest_network
+
   web:
     build:
       context: .
@@ -154,6 +165,7 @@ volumes:
   postgres_data:
   static_volume:
   status_data:
+  qdrant_data:
 
 networks:
   imedbest_network:

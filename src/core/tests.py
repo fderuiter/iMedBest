@@ -134,3 +134,84 @@ def test_sync_forms_soft_deletion():
     ]
     engine.sync_forms(study, data_list_3)
     assert Form.objects.get(imednet_id="302").disabled is False
+
+
+@pytest.mark.django_db
+def test_sync_subjects_idempotency_and_keywords():
+    # Setup
+    provider = Provider.objects.create(name="iMednet Provider")
+    study = Study.objects.create(external_id="study-subj", name="Subject Study", provider=provider)
+
+    data_list = [
+        {
+            "subjectId": "501",
+            "subjectOid": "OID_501",
+            "subjectKey": "SUBJ_01",
+            "subjectStatus": "Screening",
+            "enrollmentStartDate": [2024, 1, 1, 10, 0, 0, 0],
+            "keywords": ["tag1", "tag2"],
+        }
+    ]
+
+    # First sync: Create
+    engine = StudySyncEngine()
+    stats1 = engine.sync_subjects(study, data_list)
+
+    assert stats1["created"] == 1
+    assert stats1["updated"] == 0
+    from core.models import Subject as CoreSubject
+
+    subject = CoreSubject.objects.get(imednet_id="501")
+    assert subject.subject_key == "SUBJ_01"
+    assert subject.keywords.count() == 2
+    assert set(subject.keywords.values_list("keyword", flat=True)) == {"tag1", "tag2"}
+
+    # Second sync: Update and change keywords
+    data_list_2 = [
+        {
+            "subjectId": "501",
+            "subjectOid": "OID_501",
+            "subjectKey": "SUBJ_01",
+            "subjectStatus": "Enrolled",
+            "enrollmentStartDate": [2024, 1, 1, 10, 0, 0, 0],
+            "keywords": ["tag2", "tag3"],
+        }
+    ]
+
+    stats2 = engine.sync_subjects(study, data_list_2)
+    assert stats2["updated"] == 1
+    subject.refresh_from_db()
+    assert subject.subject_status == "Enrolled"
+    assert subject.keywords.count() == 2
+    assert set(subject.keywords.values_list("keyword", flat=True)) == {"tag2", "tag3"}
+
+
+@pytest.mark.django_db
+def test_sync_subjects_partial_failure():
+    provider = Provider.objects.create(name="iMednet Provider")
+    study = Study.objects.create(external_id="study-subj-fail", name="Subject Fail Study", provider=provider)
+
+    data_list = [
+        {
+            "subjectId": "601",
+            "subjectOid": "OID_601",
+            "subjectKey": "SUBJ_OK",
+            "subjectStatus": "Screening",
+        },
+        {
+            "subjectId": "602",
+            "subjectOid": "OID_602",
+            "subjectKey": None,  # Should fail due to null subjectKey if unique or not null
+            "subjectStatus": "Screening",
+        },
+    ]
+
+    engine = StudySyncEngine()
+    stats = engine.sync_subjects(study, data_list)
+
+    assert stats["created"] == 1
+    assert stats["failed"] == 1
+    from core.models import Subject as CoreSubject
+
+    assert CoreSubject.objects.filter(imednet_id="601").exists()
+    assert not CoreSubject.objects.filter(imednet_id="602").exists()

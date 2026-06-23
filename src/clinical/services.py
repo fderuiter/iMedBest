@@ -1,9 +1,19 @@
 import structlog
 from django.db import IntegrityError, transaction
 
-from clinical.models import Record, Study, Subject
+from clinical.models import Record, Site, Study, Subject as ClinicalSubject
 from clinical.utils import parse_imednet_date_array
-from core.models import Form, Interval, IntervalForm, RecordRevision, User, UserRole, Variable
+from core.models import (
+    Form,
+    Interval,
+    IntervalForm,
+    RecordRevision,
+    Subject as CoreSubject,
+    SubjectKeyword,
+    User,
+    UserRole,
+    Variable,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -94,10 +104,10 @@ class StudySyncEngine:
                     user_id_ext = str(item.get("userId"))
 
                     try:
-                        subject = Subject.all_objects.get(provider=study.provider, external_id=subject_id_ext)
+                        subject = ClinicalSubject.all_objects.get(provider=study.provider, external_id=subject_id_ext)
                         record = Record.all_objects.get(provider=study.provider, external_id=record_id_ext)
                         user_profile = User.objects.get(study=study, imednet_id=user_id_ext)
-                    except (Subject.DoesNotExist, Record.DoesNotExist, User.DoesNotExist) as e:
+                    except (ClinicalSubject.DoesNotExist, Record.DoesNotExist, User.DoesNotExist) as e:
                         raise ValueError(f"Missing related entity: {e!s}") from e
 
                     _, created = RecordRevision.objects.update_or_create(
@@ -137,6 +147,58 @@ class StudySyncEngine:
                 logger.error(
                     "record_revision_sync_failed", imednet_id=item.get("recordRevisionId"), error=str(e), payload=item
                 )
+                continue
+
+        return stats
+
+    @staticmethod
+    def sync_subjects(study: Study, data_list: list[dict]) -> dict:
+        """
+        Synchronizes subject metadata and keywords from iMednet.
+        Uses update_or_create for idempotency based on imednet_id.
+        """
+        stats = {"created": 0, "updated": 0, "failed": 0}
+
+        for item in data_list:
+            try:
+                with transaction.atomic():
+                    imednet_id = str(item.get("subjectId"))
+                    site_name = item.get("siteName")
+                    site = None
+                    if site_name:
+                        site = Site.all_objects.filter(study=study, name=site_name).first()
+
+                    subject, created = CoreSubject.objects.update_or_create(
+                        imednet_id=imednet_id,
+                        defaults={
+                            "study": study,
+                            "site": site,
+                            "site_name_raw": site_name or "",
+                            "subject_oid": item.get("subjectOid"),
+                            "subject_key": item.get("subjectKey"),
+                            "subject_status": item.get("subjectStatus"),
+                            "enrollment_start_date": parse_imednet_date_array(item.get("enrollmentStartDate")),
+                            "deleted": item.get("deleted", False),
+                        },
+                    )
+
+                    # Rebuild keywords
+                    subject.keywords.all().delete()
+                    keywords_data = item.get("keywords", [])
+                    if isinstance(keywords_data, list):
+                        for kw in keywords_data:
+                            SubjectKeyword.objects.create(subject=subject, keyword=kw)
+
+                    if created:
+                        stats["created"] += 1
+                        logger.info("subject_created", imednet_id=imednet_id, study_id=study.id)
+                    else:
+                        stats["updated"] += 1
+                        logger.info("subject_updated", imednet_id=imednet_id, study_id=study.id)
+
+            except (IntegrityError, ValueError, TypeError) as e:
+                stats["failed"] += 1
+                logger.error("subject_sync_failed", imednet_id=item.get("subjectId"), error=str(e), payload=item)
                 continue
 
         return stats

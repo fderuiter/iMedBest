@@ -1,7 +1,9 @@
 import pytest
+
 from clinical.models import Provider, Study
 from clinical.services import StudySyncEngine
-from core.models import Subject, Interval, Visit
+from core.models import Interval, Subject, Visit
+
 
 @pytest.mark.django_db
 def test_sync_visits_idempotency():
@@ -56,7 +58,9 @@ def test_sync_visits_partial_failure():
     study = Study.objects.create(external_id="study-456", name="Test Study 2", provider=provider)
 
     Subject.objects.create(imednet_id="subj1", subject_key="S001", study=study)
-    Interval.objects.create(imednet_id="int1", interval_name="Day 1", study=study, interval_sequence=1, interval_group_id=1)
+    Interval.objects.create(
+        imednet_id="int1", interval_name="Day 1", study=study, interval_sequence=1, interval_group_id=1
+    )
 
     data_list = [
         {

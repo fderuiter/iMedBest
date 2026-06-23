@@ -1,8 +1,9 @@
 import pytest
-from django.utils.timezone import now
-from clinical.models import Study, Provider
-from core.models import Coding, Subject, Form, Variable, User
+
+from clinical.models import Provider, Study
 from clinical.services import StudySyncEngine
+from core.models import Coding, Form, Subject, User, Variable
+
 
 @pytest.mark.django_db
 class TestCodingSync:
@@ -17,7 +18,14 @@ class TestCodingSync:
             study=study, imednet_id="2001", form_key="F001", form_name="Form 1", form_type="Standard", revision=1
         )
         variable = Variable.objects.create(
-            study=study, form=form, imednet_id="3001", variable_name="Var1", variable_oid="OID1", variable_type="Text", sequence=1, revision=1
+            study=study,
+            form=form,
+            imednet_id="3001",
+            variable_name="Var1",
+            variable_oid="OID1",
+            variable_type="Text",
+            sequence=1,
+            revision=1,
         )
         user = User.objects.create(
             study=study, imednet_id="4001", login="jdoe", first_name="John", last_name="Doe", email="jdoe@example.com"
@@ -65,7 +73,7 @@ class TestCodingSync:
         assert coding.coded_by_raw == "jdoe"
 
     def test_sync_codings_idempotency(self, setup_data):
-        study, subject, form, variable, user = setup_data
+        study, _, _, _, _ = setup_data
 
         coding_data = [
             {
@@ -97,7 +105,7 @@ class TestCodingSync:
         assert Coding.objects.get(imednet_id="101").code == "AE002"
 
     def test_sync_codings_partial_failure(self, setup_data):
-        study, subject, form, variable, user = setup_data
+        study, _, _, _, _ = setup_data
 
         coding_data = [
             {

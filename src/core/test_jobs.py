@@ -1,8 +1,11 @@
-import pytest
 from unittest.mock import patch
-from clinical.models import Study, Provider
-from core.models import Job
+
+import pytest
+
+from clinical.models import Provider, Study
 from clinical.services import StudySyncEngine
+from core.models import Job
+
 
 @pytest.mark.django_db
 class TestJobSync:
@@ -30,10 +33,10 @@ class TestJobSync:
                 "batchId": batch_id,
                 "state": "RUNNING",
                 "dateCreated": [2024, 1, 1, 13, 0, 0, 0],
-            }
+            },
         ]
 
-        with patch.object(StudySyncEngine, '_fetch_job_payload', return_value=mock_payload):
+        with patch.object(StudySyncEngine, "_fetch_job_payload", return_value=mock_payload):
             result = StudySyncEngine.sync_job_status(batch_id)
 
         assert "Created: 2" in result
@@ -52,7 +55,6 @@ class TestJobSync:
         assert job2.date_finished is None
 
     def test_sync_job_status_partial_failure(self, setup_data):
-        study = setup_data
         batch_id = "BATCH-ERR"
 
         mock_payload = [
@@ -63,14 +65,14 @@ class TestJobSync:
                 "dateCreated": [2024, 1, 1, 12, 0, 0, 0],
             },
             {
-                "jobId": None, # Should cause failure
+                "jobId": None,  # Should cause failure
                 "batchId": batch_id,
                 "state": "BROKEN",
                 "dateCreated": [2024, 1, 1, 12, 0, 0, 0],
-            }
+            },
         ]
 
-        with patch.object(StudySyncEngine, '_fetch_job_payload', return_value=mock_payload):
+        with patch.object(StudySyncEngine, "_fetch_job_payload", return_value=mock_payload):
             result = StudySyncEngine.sync_job_status(batch_id)
 
         assert "Created: 1" in result
@@ -79,7 +81,6 @@ class TestJobSync:
         assert Job.objects.filter(imednet_id="JOB-GOOD").exists()
 
     def test_sync_job_status_idempotency(self, setup_data):
-        study = setup_data
         batch_id = "BATCH-1"
 
         mock_payload = [
@@ -91,7 +92,7 @@ class TestJobSync:
             }
         ]
 
-        with patch.object(StudySyncEngine, '_fetch_job_payload', return_value=mock_payload):
+        with patch.object(StudySyncEngine, "_fetch_job_payload", return_value=mock_payload):
             StudySyncEngine.sync_job_status(batch_id)
 
         assert Job.objects.count() == 1
@@ -99,7 +100,7 @@ class TestJobSync:
 
         # Update state in second sync
         mock_payload[0]["state"] = "COMPLETED"
-        with patch.object(StudySyncEngine, '_fetch_job_payload', return_value=mock_payload):
+        with patch.object(StudySyncEngine, "_fetch_job_payload", return_value=mock_payload):
             result = StudySyncEngine.sync_job_status(batch_id)
 
         assert "Updated: 1" in result
@@ -117,7 +118,7 @@ class TestJobSync:
             imednet_id="JOB-EXISTING",
             batch_id=batch_id,
             state="RUNNING",
-            date_created="2024-01-01T12:00:00Z"
+            date_created="2024-01-01T12:00:00Z",
         )
 
         mock_payload = [
@@ -129,7 +130,7 @@ class TestJobSync:
             }
         ]
 
-        with patch.object(StudySyncEngine, '_fetch_job_payload', return_value=mock_payload):
+        with patch.object(StudySyncEngine, "_fetch_job_payload", return_value=mock_payload):
             StudySyncEngine.sync_job_status(batch_id)
 
         job = Job.objects.get(imednet_id="JOB-EXISTING")

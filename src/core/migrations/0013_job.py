@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0020_bufferedorphan_contains_phi"),
         ("core", "0012_query_querycomment"),

@@ -288,6 +288,22 @@ wheels = [
 ]
 
 [[package]]
+name = "django-auth-adfs"
+version = "1.16.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "django" },
+    { name = "pyjwt" },
+    { name = "requests" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/e9/2513662195c0a1b308ff18b8dc7ce1b45b1ee35ee2dc65fcf8fee6134e64/django_auth_adfs-1.16.0.tar.gz", hash = "sha256:2af853fcfc8365c9b43dbeda909c799798ad2aaf2d23ccbddd313066f3c0707d", size = 16853, upload-time = "2026-01-08T07:59:55.192Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/99/34/6fe3fec0cf68e778ac320d68fe025b4822e3374df5450c44391ffe8bdee4/django_auth_adfs-1.16.0-py3-none-any.whl", hash = "sha256:22b580ba520ce910d6abbe0c74cd06802d1b21bed7815bb048bd15f1fa5daabd", size = 19462, upload-time = "2026-01-08T07:59:53.699Z" },
+]
+
+[[package]]
 name = "django-celery-results"
 version = "2.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -378,6 +394,7 @@ dependencies = [
     { name = "celery" },
     { name = "cryptography" },
     { name = "django" },
+    { name = "django-auth-adfs" },
     { name = "django-celery-results" },
     { name = "django-environ" },
     { name = "django-ninja" },
@@ -405,6 +422,7 @@ requires-dist = [
     { name = "celery", specifier = ">=5.6.3" },
     { name = "cryptography", specifier = ">=48.0.1" },
     { name = "django", specifier = ">=5.1.15,<6.1.0" },
+    { name = "django-auth-adfs", specifier = ">=1.16.0" },
     { name = "django-celery-results", specifier = ">=2.6.0" },
     { name = "django-environ", specifier = ">=0.11.0" },
     { name = "django-ninja", specifier = ">=1.6.2" },

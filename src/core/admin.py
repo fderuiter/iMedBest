@@ -191,6 +191,13 @@ class SubjectKeywordInline(admin.TabularInline):
     model = SubjectKeyword
     extra = 0
     readonly_fields = ("keyword",)
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Subject)

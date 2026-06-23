@@ -3,6 +3,7 @@ import pytest
 from clinical.models import Provider, Study
 from clinical.services import StudySyncEngine
 from core.models import Form
+from core.models import Subject as CoreSubject
 
 
 @pytest.mark.django_db
@@ -159,7 +160,7 @@ def test_sync_subjects_idempotency_and_keywords():
 
     assert stats1["created"] == 1
     assert stats1["updated"] == 0
-    from core.models import Subject as CoreSubject
+    assert stats1["failed"] == 0
 
     subject = CoreSubject.objects.get(imednet_id="501")
     assert subject.subject_key == "SUBJ_01"
@@ -179,7 +180,9 @@ def test_sync_subjects_idempotency_and_keywords():
     ]
 
     stats2 = engine.sync_subjects(study, data_list_2)
+    assert stats2["created"] == 0
     assert stats2["updated"] == 1
+    assert stats2["failed"] == 0
     subject.refresh_from_db()
     assert subject.subject_status == "Enrolled"
     assert subject.keywords.count() == 2
@@ -210,8 +213,8 @@ def test_sync_subjects_partial_failure():
     stats = engine.sync_subjects(study, data_list)
 
     assert stats["created"] == 1
+    assert stats["updated"] == 0
     assert stats["failed"] == 1
-    from core.models import Subject as CoreSubject
 
     assert CoreSubject.objects.filter(imednet_id="601").exists()
     assert not CoreSubject.objects.filter(imednet_id="602").exists()

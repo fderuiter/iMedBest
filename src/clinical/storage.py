@@ -216,7 +216,7 @@ class ComplianceStorageProxy:
                 pos = content.tell()
                 data = content.read()
                 content.seek(pos)
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
         elif isinstance(content, bytes):
             data = content
@@ -250,7 +250,7 @@ class ComplianceStorageProxy:
                                     return True
                         except LookupError:
                             pass
-        except Exception:
+        except Exception:  # noqa: S110
             pass
         return False
 

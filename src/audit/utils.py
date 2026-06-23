@@ -55,6 +55,8 @@ def extract_study_id(instance):
                                 return res
                 except Exception:  # noqa: S110
                     pass
+    return None
+
 
 def sanitize_changes(instance, changes):
     if not changes or not hasattr(instance, "pii_fields"):
@@ -68,7 +70,7 @@ def sanitize_changes(instance, changes):
             study = instance.get_study()
             if study and getattr(study, "pii_masking_enabled", False):
                 should_mask = True
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
     # 2. Mask if instance itself contains PHI (global clinical metadata)

@@ -59,9 +59,9 @@ def extract_study_id(instance):
 def sanitize_changes(instance, changes):
     if not changes or not hasattr(instance, "pii_fields"):
         return changes
-    
+
     should_mask = False
-    
+
     # 1. Mask if study has masking enabled
     if hasattr(instance, "get_study") and callable(instance.get_study):
         try:

@@ -1,4 +1,7 @@
+import structlog
 from django.db import models
+
+logger = structlog.get_logger(__name__)
 
 
 class SyncedResourceBase(models.Model):
@@ -314,3 +317,91 @@ class Visit(SyncedResourceBase):
 
     def __str__(self):
         return f"Visit {self.imednet_id} (Subject: {self.subject_key_raw}, Interval: {self.interval_name_raw})"
+
+
+class Record(SyncedResourceBase):
+    """
+    Represents an iMednet Record entity.
+    """
+
+    study = models.ForeignKey(
+        "clinical.Study",
+        on_delete=models.PROTECT,
+        related_name="imednet_records",
+        help_text="The study this record belongs to.",
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name="imednet_records",
+        help_text="The subject this record belongs to.",
+    )
+    site = models.ForeignKey(
+        "clinical.Site",
+        on_delete=models.PROTECT,
+        related_name="imednet_records",
+        help_text="The site this record belongs to.",
+    )
+    form = models.ForeignKey(
+        Form,
+        on_delete=models.PROTECT,
+        related_name="imednet_records",
+        help_text="The form this record belongs to.",
+    )
+    interval = models.ForeignKey(
+        Interval,
+        on_delete=models.PROTECT,
+        related_name="imednet_records",
+        help_text="The interval this record belongs to.",
+    )
+    visit = models.ForeignKey(
+        Visit,
+        on_delete=models.PROTECT,
+        related_name="imednet_records",
+        null=True,
+        blank=True,
+        help_text="The visit this record belongs to.",
+    )
+    imednet_id = models.CharField(
+        max_length=255, unique=True, db_index=True, help_text="External record ID (recordId)."
+    )
+    record_oid = models.CharField(max_length=255, blank=True, help_text="External record OID.")
+    record_type = models.CharField(max_length=100, help_text="Type of the record.")
+    record_status = models.CharField(max_length=255, help_text="Status of the record.")
+    deleted = models.BooleanField(default=False, help_text="Indicates if the record is deleted in iMednet.")
+    imednet_subject_id = models.IntegerField(help_text="External subject ID (subjectId).")
+    subject_oid = models.CharField(max_length=255, blank=True, help_text="External subject OID.")
+    subject_key = models.CharField(max_length=100, db_index=True, help_text="External subject key.")
+    imednet_visit_id = models.IntegerField(null=True, blank=True, help_text="External visit ID (visitId).")
+    parent_record_id = models.IntegerField(null=True, blank=True, help_text="External parent record ID.")
+    record_data = models.JSONField(default=dict, blank=True, help_text="Schema-less record data.")
+
+    def __str__(self):
+        return f"Record {self.imednet_id} (Form: {self.form}, Status: {self.record_status})"
+
+    def save(self, *args, **kwargs):
+        # Dynamic Variable Validation
+        if self.form_id:
+            # Get valid variable names for this form
+            valid_vars = set(Variable.objects.filter(form=self.form).values_list("variable_name", flat=True))
+            for key in self.record_data:
+                if key not in valid_vars:
+                    logger.warning(
+                        "unknown_variable_in_record_data",
+                        record_id=self.imednet_id,
+                        form_id=self.form.imednet_id,
+                        variable_name=key,
+                    )
+        super().save(*args, **kwargs)
+
+
+class RecordKeyword(models.Model):
+    """
+    Represents a keyword tag associated with a Record.
+    """
+
+    record = models.ForeignKey(Record, on_delete=models.CASCADE, related_name="keywords")
+    keyword = models.CharField(max_length=255)
+
+    def __str__(self):
+        return f"{self.keyword} for Record {self.record.imednet_id}"

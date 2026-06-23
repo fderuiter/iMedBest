@@ -1,18 +1,21 @@
 import structlog
 from django.db import IntegrityError, transaction
 
-from clinical.models import Record, Site, Study, Subject as ClinicalSubject
+from clinical.models import Record, Site, Study
+from clinical.models import Subject as ClinicalSubject
 from clinical.utils import parse_imednet_date_array
 from core.models import (
     Form,
     Interval,
     IntervalForm,
     RecordRevision,
-    Subject as CoreSubject,
     SubjectKeyword,
     User,
     UserRole,
     Variable,
+)
+from core.models import (
+    Subject as CoreSubject,
 )
 
 logger = structlog.get_logger(__name__)

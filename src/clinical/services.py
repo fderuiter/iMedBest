@@ -10,12 +10,17 @@ from core.models import (
     Form,
     Interval,
     IntervalForm,
+    Query,
+    QueryComment,
     RecordRevision,
     SubjectKeyword,
     User,
     UserRole,
     Variable,
     Visit,
+)
+from core.models import (
+    Record as CoreRecord,
 )
 from core.models import (
     Subject as CoreSubject,
@@ -635,6 +640,93 @@ class StudySyncEngine:
             "status": "success",
             "submittedCount": len(records_list),
         }
+
+    @staticmethod
+    def sync_queries(study: Study, data_list: list[dict]) -> dict:
+        """
+        Synchronizes query metadata and comments from iMednet.
+        Uses update_or_create for idempotency based on annotationId (imednet_id).
+        Rebuilds nested comments within transaction.atomic().
+        """
+        stats = {"created": 0, "updated": 0, "failed": 0}
+
+        for item in data_list:
+            try:
+                with transaction.atomic():
+                    imednet_id = str(item.get("annotationId"))
+
+                    # Resolve relationships
+                    subject_id_ext = str(item.get("subjectId"))
+                    record_id_ext = str(item.get("recordId")) if item.get("recordId") else None
+                    variable_raw = item.get("variable")
+
+                    try:
+                        subject = CoreSubject.objects.get(study=study, imednet_id=subject_id_ext)
+
+                        record = None
+                        if record_id_ext:
+                            try:
+                                record = CoreRecord.objects.get(study=study, imednet_id=record_id_ext)
+                            except CoreRecord.DoesNotExist:
+                                logger.warning(
+                                    "query_sync_missing_record",
+                                    query_id=imednet_id,
+                                    record_id=record_id_ext,
+                                    study_id=study.id,
+                                )
+
+                        variable_ref = None
+                        if variable_raw:
+                            variable_ref = Variable.objects.filter(
+                                study=study, variable_name=variable_raw
+                            ).first() or Variable.objects.filter(study=study, variable_oid=variable_raw).first()
+
+                    except CoreSubject.DoesNotExist as e:
+                        raise ValueError(f"Missing related subject: {e!s}") from e
+
+                    query, created = Query.objects.update_or_create(
+                        imednet_id=imednet_id,
+                        defaults={
+                            "study": study,
+                            "subject": subject,
+                            "record": record,
+                            "variable_ref": variable_ref,
+                            "imednet_subject_id": item.get("subjectId"),
+                            "subject_oid": item.get("subjectOid"),
+                            "annotation_type": item.get("annotationType"),
+                            "query_type": item.get("type"),
+                            "description": item.get("description"),
+                            "imednet_record_id": item.get("recordId"),
+                            "variable_raw": variable_raw,
+                            "subject_key": item.get("subjectKey"),
+                        },
+                    )
+
+                    # Rebuild comments
+                    query.comments.all().delete()
+                    comments_data = item.get("comments", [])
+                    if isinstance(comments_data, list):
+                        for comment_item in comments_data:
+                            QueryComment.objects.create(
+                                query=query,
+                                comment=comment_item.get("comment"),
+                                user_raw=comment_item.get("user"),
+                                date_created=parse_imednet_date_array(comment_item.get("dateCreated")),
+                            )
+
+                    if created:
+                        stats["created"] += 1
+                        logger.info("query_created", imednet_id=imednet_id, study_id=study.id)
+                    else:
+                        stats["updated"] += 1
+                        logger.info("query_updated", imednet_id=imednet_id, study_id=study.id)
+
+            except (IntegrityError, ValueError, TypeError) as e:
+                stats["failed"] += 1
+                logger.error("query_sync_failed", imednet_id=item.get("annotationId"), error=str(e), payload=item)
+                continue
+
+        return stats
 
     @staticmethod
     def sync_users(study: Study, data_list: list[dict]) -> dict:

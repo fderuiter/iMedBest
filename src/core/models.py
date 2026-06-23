@@ -405,3 +405,62 @@ class RecordKeyword(models.Model):
 
     def __str__(self):
         return f"{self.keyword} for Record {self.record.imednet_id}"
+
+
+class Coding(SyncedResourceBase):
+    """
+    Represents an iMednet Coding entity.
+    """
+
+    study = models.ForeignKey(
+        "clinical.Study",
+        on_delete=models.PROTECT,
+        related_name="imednet_codings",
+        help_text="The study this coding belongs to.",
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name="imednet_codings",
+        help_text="The subject this coding belongs to.",
+    )
+    form = models.ForeignKey(
+        Form,
+        on_delete=models.PROTECT,
+        related_name="imednet_codings",
+        help_text="The form this coding belongs to.",
+    )
+    variable_ref = models.ForeignKey(
+        Variable,
+        on_delete=models.PROTECT,
+        related_name="imednet_codings",
+        help_text="The variable reference this coding belongs to.",
+    )
+    coded_by_user = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="imednet_codings",
+        help_text="The user who performed the coding.",
+    )
+    imednet_id = models.CharField(
+        max_length=255, unique=True, db_index=True, help_text="External iMednet ID (codingId)."
+    )
+    site_name = models.CharField(max_length=255)
+    site_id = models.IntegerField()
+    imednet_subject_id = models.IntegerField(help_text="External subject ID (subjectId).")
+    revision = models.IntegerField()
+    imednet_record_id = models.IntegerField(help_text="External record ID (recordId).")
+    value = models.TextField()
+    code = models.TextField()
+    reason = models.TextField(blank=True)
+    dictionary_name = models.CharField(max_length=100, db_index=True)
+    dictionary_version = models.CharField(max_length=50)
+    date_coded = models.DateTimeField()
+    subject_key_raw = models.CharField(
+        max_length=100, blank=True, help_text="Raw subject key backup for error tracking."
+    )
+    variable_raw = models.CharField(max_length=255, blank=True, help_text="Raw variable backup for error tracking.")
+    coded_by_raw = models.CharField(max_length=255, blank=True, help_text="Raw user backup for error tracking.")
+
+    def __str__(self):
+        return f"Coding {self.imednet_id} ({self.code})"

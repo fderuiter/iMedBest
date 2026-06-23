@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    Coding,
     Form,
     Interval,
     Record,
@@ -331,4 +332,49 @@ class RecordAdmin(admin.ModelAdmin):
             .get_queryset(request)
             .select_related("study", "subject", "site", "form", "interval", "visit")
             .prefetch_related("keywords")
+        )
+
+
+@admin.register(Coding)
+class CodingAdmin(admin.ModelAdmin):
+    """
+    Optimized administrator interface for iMednet Codings.
+    """
+
+    list_display = ("imednet_id", "subject", "code", "dictionary_name", "study")
+    list_filter = ("dictionary_name", "study")
+    search_fields = ("imednet_id", "code", "dictionary_name", "subject__subject_key")
+
+    # All incoming remote API fields are read-only to ensure data integrity
+    readonly_fields = (
+        "study",
+        "subject",
+        "form",
+        "variable_ref",
+        "coded_by_user",
+        "imednet_id",
+        "site_name",
+        "site_id",
+        "imednet_subject_id",
+        "revision",
+        "imednet_record_id",
+        "value",
+        "code",
+        "reason",
+        "dictionary_name",
+        "dictionary_version",
+        "date_coded",
+        "subject_key_raw",
+        "variable_raw",
+        "coded_by_raw",
+    )
+
+    def get_queryset(self, request):
+        """
+        Optimize queryset with select_related to prevent N+1 query degradation.
+        """
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("study", "subject", "form", "variable_ref", "coded_by_user")
         )

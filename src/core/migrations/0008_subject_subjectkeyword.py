@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0019_syncjob_contains_phi_synctask_contains_phi"),
         ("core", "0007_variable"),
@@ -58,15 +57,11 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "subject_status",
-                    models.CharField(
-                        help_text="Status of the subject.", max_length=100
-                    ),
+                    models.CharField(help_text="Status of the subject.", max_length=100),
                 ),
                 (
                     "enrollment_start_date",
-                    models.DateTimeField(
-                        blank=True, help_text="Enrollment start date.", null=True
-                    ),
+                    models.DateTimeField(blank=True, help_text="Enrollment start date.", null=True),
                 ),
                 (
                     "deleted",

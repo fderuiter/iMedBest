@@ -3,6 +3,8 @@ from django.contrib import admin
 from .models import (
     Form,
     Interval,
+    Record,
+    RecordKeyword,
     RecordRevision,
     Subject,
     SubjectKeyword,
@@ -273,3 +275,60 @@ class VisitAdmin(admin.ModelAdmin):
         Optimize queryset with select_related to prevent N+1 query degradation.
         """
         return super().get_queryset(request).select_related("study", "subject", "interval")
+
+
+class RecordKeywordInline(admin.TabularInline):
+    model = RecordKeyword
+    extra = 0
+    readonly_fields = ("keyword",)
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Record)
+class RecordAdmin(admin.ModelAdmin):
+    """
+    Optimized administrator interface for iMednet Records.
+    """
+
+    list_display = ("subject_key", "form", "record_status", "deleted", "study")
+    list_filter = ("record_status", "deleted", "study", "form")
+    search_fields = ("subject_key", "imednet_id", "record_oid")
+    inlines = [RecordKeywordInline]
+
+    # All incoming remote API fields are read-only to ensure data integrity
+    readonly_fields = (
+        "study",
+        "subject",
+        "site",
+        "form",
+        "interval",
+        "visit",
+        "imednet_id",
+        "record_oid",
+        "record_type",
+        "record_status",
+        "deleted",
+        "imednet_subject_id",
+        "subject_oid",
+        "subject_key",
+        "imednet_visit_id",
+        "parent_record_id",
+        "record_data",
+    )
+
+    def get_queryset(self, request):
+        """
+        Optimize queryset with select_related and prefetch_related to prevent N+1 query degradation.
+        """
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("study", "subject", "site", "form", "interval", "visit")
+            .prefetch_related("keywords")
+        )

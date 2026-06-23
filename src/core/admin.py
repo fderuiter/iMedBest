@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Form, Interval, RecordRevision, User, UserRole
+from .models import Form, Interval, RecordRevision, User, UserRole, Variable
 
 
 class UserRoleInline(admin.TabularInline):
@@ -151,3 +151,37 @@ class IntervalAdmin(admin.ModelAdmin):
         Optimize queryset with select_related and prefetch_related to prevent N+1 query degradation.
         """
         return super().get_queryset(request).select_related("study").prefetch_related("forms")
+
+
+@admin.register(Variable)
+class VariableAdmin(admin.ModelAdmin):
+    """
+    Optimized administrator interface for iMednet Variables.
+    """
+
+    list_display = ("variable_oid", "variable_name", "variable_type", "deleted", "study")
+    list_filter = ("deleted", "variable_type", "study")
+    search_fields = ("variable_oid", "variable_name", "imednet_id")
+
+    # All incoming remote API fields are read-only to ensure data integrity
+    readonly_fields = (
+        "study",
+        "form",
+        "form_key_raw",
+        "imednet_id",
+        "variable_type",
+        "variable_name",
+        "sequence",
+        "revision",
+        "disabled",
+        "variable_oid",
+        "deleted",
+        "label",
+        "blinded",
+    )
+
+    def get_queryset(self, request):
+        """
+        Optimize queryset with select_related to prevent N+1 query degradation.
+        """
+        return super().get_queryset(request).select_related("study", "form")

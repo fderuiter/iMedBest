@@ -184,3 +184,44 @@ class IntervalForm(models.Model):
 
     def __str__(self):
         return f"{self.interval.interval_name} - {self.form.form_name}"
+
+
+class Variable(SyncedResourceBase):
+    """
+    Represents an iMednet Variable entity.
+    """
+
+    study = models.ForeignKey(
+        "clinical.Study",
+        on_delete=models.PROTECT,
+        related_name="imednet_variables",
+        help_text="The study this variable belongs to.",
+    )
+    form = models.ForeignKey(
+        Form,
+        on_delete=models.PROTECT,
+        related_name="variables",
+        null=True,
+        blank=True,
+        help_text="The form this variable belongs to.",
+    )
+    form_key_raw = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Raw form ID from iMednet, used for error tracking if form lookup fails.",
+    )
+    imednet_id = models.CharField(
+        max_length=255, unique=True, db_index=True, help_text="External iMednet ID (variableId)."
+    )
+    variable_type = models.CharField(max_length=100)
+    variable_name = models.CharField(max_length=255)
+    sequence = models.IntegerField()
+    revision = models.IntegerField()
+    disabled = models.BooleanField(default=False)
+    variable_oid = models.CharField(max_length=255, unique=True, db_index=True)
+    deleted = models.BooleanField(default=False)
+    label = models.TextField(blank=True)
+    blinded = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.variable_name} ({self.variable_oid})"

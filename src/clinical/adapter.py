@@ -128,6 +128,7 @@ class MultiVendorAdapter:
                             payload=payload,
                             user=request.user,
                             provider=self.provider,
+                            contains_phi=mapped_payload.get("contains_phi", False),
                         )
                         return 202, {"message": "Buffered due to missing parent"}
                     defaults[parent_field] = parent_obj

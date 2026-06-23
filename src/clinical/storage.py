@@ -160,7 +160,9 @@ class ComplianceStorageProxy:
     def base_dir(self):
         return self.primary_adapter.base_dir
 
-    def _log_audit(self, action, path, contains_phi=False):
+    def _log_audit(self, action, path, contains_phi=None):
+        if contains_phi is None:
+            contains_phi = True
         phi_status_str = "PHI" if contains_phi else "Non-PHI"
         logger.info(f"AUDIT LOG: {phi_status_str} file operation ({action}) for {path}")
         if AuditLog and get_current_request:
@@ -206,7 +208,62 @@ class ComplianceStorageProxy:
                 if not fallback_success:
                     raise AuditLoggingError(f"Primary and fallback audit logging failed: {e}") from original_exception
 
-    def save(self, name, content, namespace="", contains_phi=False):
+    def _scan_for_phi(self, content):
+        """Scans the content for PHI using automated payload scanning and model metadata."""
+        data = None
+        if hasattr(content, "read"):
+            try:
+                pos = content.tell()
+                data = content.read()
+                content.seek(pos)
+            except Exception:
+                pass
+        elif isinstance(content, bytes):
+            data = content
+        elif isinstance(content, str):
+            data = content.encode("utf-8")
+
+        if not data:
+            return False
+
+        try:
+            parsed = json.loads(data)
+            if isinstance(parsed, list):
+                from django.apps import apps
+                for item in parsed:
+                    if not isinstance(item, dict):
+                        continue
+                    payload = item.get("payload", {})
+                    # 1. Payload scanning: check if contains_phi is true
+                    if payload.get("contains_phi") is True:
+                        return True
+
+                    # 2. Model metadata: check if the model has pii_fields and the payload contains any of them
+                    entity_type = item.get("entity_type")
+                    if entity_type:
+                        try:
+                            # Map entity_type if needed, but assuming it's the model name
+                            ModelCls = apps.get_model("clinical", entity_type)
+                            pii_fields = getattr(ModelCls, "pii_fields", [])
+                            for field in pii_fields:
+                                if field in payload and payload[field]:
+                                    return True
+                        except LookupError:
+                            pass
+        except Exception:
+            pass
+        return False
+
+    def save(self, name, content, namespace="", contains_phi=None):
+        scanned_phi = self._scan_for_phi(content)
+
+        if contains_phi is None:
+            contains_phi = scanned_phi if scanned_phi else True
+        else:
+            if scanned_phi and not contains_phi:
+                # Proxy successfully blocks any attempt to write known sensitive model data to insecure storage roots
+                contains_phi = True
+
         file_path = os.path.join(namespace, name) if namespace else name
         action = "SAVE" if contains_phi else "FILE_SAVE"
         self._log_audit(action, file_path, contains_phi=contains_phi)
@@ -217,21 +274,21 @@ class ComplianceStorageProxy:
 
     def exists(self, path, contains_phi=None):
         if contains_phi is None:
-            raise ValueError("contains_phi must be explicitly specified (True or False) for exists()")
+            contains_phi = True
         if contains_phi is True:
             return self.baa_adapter.exists(path)
         return self.primary_adapter.exists(path)
 
     def get_absolute_path(self, path, contains_phi=None):
         if contains_phi is None:
-            raise ValueError("contains_phi must be explicitly specified (True or False) for get_absolute_path()")
+            contains_phi = True
         if contains_phi is True:
             return self.baa_adapter.get_absolute_path(path)
         return self.primary_adapter.get_absolute_path(path)
 
     def open(self, path, mode="rb", contains_phi=None):
         if contains_phi is None:
-            raise ValueError("contains_phi must be explicitly specified (True or False) for open()")
+            contains_phi = True
         if contains_phi is True:
             self._log_audit(f"OPEN({mode})", path, contains_phi=True)
             return self.baa_adapter.open(path, mode)

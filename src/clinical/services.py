@@ -1,27 +1,20 @@
-import uuid
-
 import structlog
-from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils.dateparse import parse_date
 
-from clinical.models import Record, Site, Study, SyncJob
+from clinical.models import Record, Site, Study
 from clinical.models import Subject as ClinicalSubject
 from clinical.utils import parse_imednet_date_array
 from core.models import (
     Form,
     Interval,
     IntervalForm,
-    RecordKeyword,
     RecordRevision,
     SubjectKeyword,
     User,
     UserRole,
     Variable,
     Visit,
-)
-from core.models import (
-    Record as CoreRecord,
 )
 from core.models import (
     Subject as CoreSubject,
@@ -436,6 +429,9 @@ class StudySyncEngine:
         Synchronizes record metadata and keywords from iMednet.
         Uses update_or_create for idempotency based on imednet_id.
         """
+        from core.models import Record as CoreRecord
+        from core.models import RecordKeyword
+
         stats = {"created": 0, "updated": 0, "failed": 0}
 
         for item in data_list:
@@ -542,6 +538,12 @@ class StudySyncEngine:
         Submits records to the iMednet API.
         On success, creates a SyncJob to track the submission.
         """
+        import uuid
+
+        from django.contrib.auth import get_user_model
+
+        from clinical.models import SyncJob
+
         # Simulate API batch submission
         batch_id = str(uuid.uuid4())
 

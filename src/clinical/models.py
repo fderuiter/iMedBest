@@ -325,6 +325,7 @@ class BufferedOrphan(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     user = models.ForeignKey("users.User", on_delete=models.CASCADE, null=True, blank=True)
+    contains_phi = models.BooleanField(default=False)
 
     def __str__(self):
         return f"BufferedOrphan {self.entity_type} waiting for {self.missing_parent_id}"

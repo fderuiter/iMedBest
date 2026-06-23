@@ -373,8 +373,4 @@ class CodingAdmin(admin.ModelAdmin):
         """
         Optimize queryset with select_related to prevent N+1 query degradation.
         """
-        return (
-            super()
-            .get_queryset(request)
-            .select_related("study", "subject", "form", "variable_ref", "coded_by_user")
-        )
+        return super().get_queryset(request).select_related("study", "subject", "form", "variable_ref", "coded_by_user")

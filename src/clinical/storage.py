@@ -230,6 +230,7 @@ class ComplianceStorageProxy:
             parsed = json.loads(data)
             if isinstance(parsed, list):
                 from django.apps import apps
+
                 for item in parsed:
                     if not isinstance(item, dict):
                         continue

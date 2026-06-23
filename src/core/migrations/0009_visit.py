@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0019_syncjob_contains_phi_synctask_contains_phi"),
         ("core", "0008_subject_subjectkeyword"),

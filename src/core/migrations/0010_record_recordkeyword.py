@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0020_bufferedorphan_contains_phi"),
         ("core", "0009_visit"),
@@ -37,9 +36,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "record_oid",
-                    models.CharField(
-                        blank=True, help_text="External record OID.", max_length=255
-                    ),
+                    models.CharField(blank=True, help_text="External record OID.", max_length=255),
                 ),
                 (
                     "record_type",
@@ -62,33 +59,23 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "subject_oid",
-                    models.CharField(
-                        blank=True, help_text="External subject OID.", max_length=255
-                    ),
+                    models.CharField(blank=True, help_text="External subject OID.", max_length=255),
                 ),
                 (
                     "subject_key",
-                    models.CharField(
-                        db_index=True, help_text="External subject key.", max_length=100
-                    ),
+                    models.CharField(db_index=True, help_text="External subject key.", max_length=100),
                 ),
                 (
                     "imednet_visit_id",
-                    models.IntegerField(
-                        blank=True, help_text="External visit ID (visitId).", null=True
-                    ),
+                    models.IntegerField(blank=True, help_text="External visit ID (visitId).", null=True),
                 ),
                 (
                     "parent_record_id",
-                    models.IntegerField(
-                        blank=True, help_text="External parent record ID.", null=True
-                    ),
+                    models.IntegerField(blank=True, help_text="External parent record ID.", null=True),
                 ),
                 (
                     "record_data",
-                    models.JSONField(
-                        blank=True, default=dict, help_text="Schema-less record data."
-                    ),
+                    models.JSONField(blank=True, default=dict, help_text="Schema-less record data."),
                 ),
                 (
                     "form",

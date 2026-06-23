@@ -11,9 +11,7 @@ class TestCodingSync:
     def setup_data(self):
         provider = Provider.objects.create(name="iMednet")
         study = Study.objects.create(name="Test Study", provider=provider, external_id="study1")
-        subject = Subject.objects.create(
-            study=study, imednet_id="1001", subject_key="S001", subject_status="Active"
-        )
+        subject = Subject.objects.create(study=study, imednet_id="1001", subject_key="S001", subject_status="Active")
         form = Form.objects.create(
             study=study, imednet_id="2001", form_key="F001", form_name="Form 1", form_type="Standard", revision=1
         )
@@ -139,7 +137,7 @@ class TestCodingSync:
                 "dictionaryName": "MedDRA",
                 "dictionaryVersion": "24.0",
                 "dateCoded": [2023, 10, 27, 10, 0, 0, 0],
-            }
+            },
         ]
 
         stats = StudySyncEngine.sync_codings(study, coding_data)

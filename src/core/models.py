@@ -102,3 +102,72 @@ class UserRole(models.Model):
 
     def __str__(self):
         return f"{self.role_name} for {self.user.login}"
+
+
+class RecordRevision(SyncedResourceBase):
+    """
+    Represents an iMednet RecordRevision entity.
+    """
+    study = models.ForeignKey(
+        "clinical.Study",
+        on_delete=models.PROTECT,
+        related_name="imednet_record_revisions",
+        help_text="The study this record revision belongs to."
+    )
+    subject = models.ForeignKey(
+        "clinical.Subject",
+        on_delete=models.PROTECT,
+        related_name="imednet_record_revisions",
+        help_text="The subject this record revision belongs to."
+    )
+    record = models.ForeignKey(
+        "clinical.Record",
+        on_delete=models.PROTECT,
+        related_name="imednet_record_revisions",
+        help_text="The record this revision belongs to."
+    )
+    user_profile = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="record_revisions",
+        help_text="The user profile associated with this revision."
+    )
+    imednet_id = models.CharField(
+        max_length=255,
+        unique=True,
+        db_index=True,
+        help_text="External iMednet ID (recordRevisionId)."
+    )
+    imednet_record_id = models.IntegerField(help_text="External record ID (recordId).")
+    record_oid = models.CharField(max_length=255, help_text="External record OID.")
+    record_revision = models.IntegerField(help_text="Record revision number.")
+    data_revision = models.IntegerField(help_text="Data revision number.")
+    record_status = models.CharField(max_length=255, help_text="Status of the record.")
+    imednet_subject_id = models.IntegerField(help_text="External subject ID.")
+    subject_oid = models.CharField(max_length=255, help_text="External subject OID.")
+    subject_key = models.CharField(
+        max_length=100,
+        db_index=True,
+        help_text="External subject key."
+    )
+    site_id = models.IntegerField(help_text="External site ID.")
+    form_key = models.CharField(
+        max_length=100,
+        db_index=True,
+        help_text="External form key."
+    )
+    interval_id = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="External interval ID."
+    )
+    role = models.CharField(max_length=255, null=True, blank=True, help_text="Role associated with the revision.")
+    user_raw = models.CharField(max_length=255, null=True, blank=True, help_text="Raw user information.")
+    reason_for_change = models.TextField(blank=True, help_text="Reason for change.")
+    deleted = models.BooleanField(
+        default=False,
+        help_text="Indicates if the revision is deleted in iMednet."
+    )
+
+    def __str__(self):
+        return f"Revision {self.record_revision} for Record {self.record_id} ({self.record_status})"

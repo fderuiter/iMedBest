@@ -1,7 +1,7 @@
 import structlog
 from django.db import IntegrityError, transaction
-from core.models import Form, User, UserRole
-from clinical.models import Study
+from core.models import Form, User, UserRole, RecordRevision
+from clinical.models import Study, Subject, Record
 from clinical.utils import parse_imednet_date_array
 
 logger = structlog.get_logger(__name__)
@@ -74,6 +74,76 @@ class StudySyncEngine:
 
         if soft_delete_count > 0:
             logger.info("forms_soft_deleted", count=soft_delete_count, study_id=study.id)
+
+        return stats
+
+    @staticmethod
+    def sync_record_revisions(study: Study, data_list: list[dict]) -> dict:
+        """
+        Synchronizes record revision metadata from iMednet.
+        Uses update_or_create for idempotency based on imednet_id.
+        """
+        stats = {"created": 0, "updated": 0, "failed": 0}
+
+        for item in data_list:
+            try:
+                with transaction.atomic():
+                    imednet_id = str(item.get("recordRevisionId"))
+
+                    # Lookup related entities by their external IDs
+                    # We expect these to exist due to sync order, but handle if missing
+                    subject_id_ext = str(item.get("subjectId"))
+                    record_id_ext = str(item.get("recordId"))
+                    user_id_ext = str(item.get("userId"))
+
+                    try:
+                        subject = Subject.all_objects.get(provider=study.provider, external_id=subject_id_ext)
+                        record = Record.all_objects.get(provider=study.provider, external_id=record_id_ext)
+                        user_profile = User.objects.get(study=study, imednet_id=user_id_ext)
+                    except (Subject.DoesNotExist, Record.DoesNotExist, User.DoesNotExist) as e:
+                        raise ValueError(f"Missing related entity: {str(e)}") from e
+
+                    revision, created = RecordRevision.objects.update_or_create(
+                        imednet_id=imednet_id,
+                        defaults={
+                            "study": study,
+                            "subject": subject,
+                            "record": record,
+                            "user_profile": user_profile,
+                            "imednet_record_id": item.get("recordId"),
+                            "record_oid": item.get("recordOid"),
+                            "record_revision": item.get("recordRevision"),
+                            "data_revision": item.get("dataRevision"),
+                            "record_status": item.get("recordStatus"),
+                            "imednet_subject_id": item.get("subjectId"),
+                            "subject_oid": item.get("subjectOid"),
+                            "subject_key": item.get("subjectKey"),
+                            "site_id": item.get("siteId"),
+                            "form_key": item.get("formKey"),
+                            "interval_id": item.get("intervalId"),
+                            "role": item.get("role"),
+                            "user_raw": item.get("user"),
+                            "reason_for_change": item.get("reasonForChange", ""),
+                            "deleted": item.get("deleted", False),
+                        }
+                    )
+
+                    if created:
+                        stats["created"] += 1
+                        logger.info("record_revision_created", imednet_id=imednet_id, study_id=study.id)
+                    else:
+                        stats["updated"] += 1
+                        logger.info("record_revision_updated", imednet_id=imednet_id, study_id=study.id)
+
+            except (IntegrityError, ValueError, TypeError) as e:
+                stats["failed"] += 1
+                logger.error(
+                    "record_revision_sync_failed",
+                    imednet_id=item.get("recordRevisionId"),
+                    error=str(e),
+                    payload=item
+                )
+                continue
 
         return stats
 

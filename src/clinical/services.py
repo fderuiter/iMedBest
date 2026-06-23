@@ -165,7 +165,11 @@ class StudySyncEngine:
         for item in data_list:
             try:
                 with transaction.atomic():
-                    imednet_id = str(item.get("subjectId"))
+                    subject_id_raw = item.get("subjectId")
+                    if subject_id_raw in (None, ""):
+                        raise ValueError("Missing required subjectId")
+                    imednet_id = str(subject_id_raw)
+
                     site_name = item.get("siteName")
                     site = None
                     if site_name:
@@ -201,7 +205,12 @@ class StudySyncEngine:
 
             except (IntegrityError, ValueError, TypeError) as e:
                 stats["failed"] += 1
-                logger.error("subject_sync_failed", imednet_id=item.get("subjectId"), error=str(e), payload=item)
+                logger.error(
+                    "subject_sync_failed",
+                    imednet_id=item.get("subjectId"),
+                    subject_key=item.get("subjectKey"),
+                    error=str(e),
+                )
                 continue
 
         return stats

@@ -51,3 +51,44 @@ class Form(SyncedResourceBase):
 
     def __str__(self):
         return f"{self.form_name} ({self.form_key})"
+
+
+class Job(SyncedResourceBase):
+    """
+    Represents an iMednet Job entity.
+    """
+    study = models.ForeignKey(
+        "clinical.Study",
+        on_delete=models.PROTECT,
+        related_name="imednet_jobs",
+        help_text="The study this job belongs to."
+    )
+    imednet_id = models.CharField(
+        max_length=255,
+        unique=True,
+        db_index=True,
+        help_text="External iMednet ID (jobId)."
+    )
+    batch_id = models.CharField(
+        max_length=255,
+        db_index=True,
+        help_text="External batch ID (batchId)."
+    )
+    state = models.CharField(
+        max_length=100,
+        help_text="The current state of the job."
+    )
+    date_created = models.DateTimeField(help_text="Date the job was created in iMednet.")
+    date_started = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Date the job started in iMednet."
+    )
+    date_finished = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Date the job finished in iMednet."
+    )
+
+    def __str__(self):
+        return f"Job {self.imednet_id} ({self.state})"

@@ -1,6 +1,6 @@
 import structlog
 from django.db import IntegrityError, transaction
-from core.models import Form
+from core.models import Form, Job
 from clinical.models import Study
 
 logger = structlog.get_logger(__name__)
@@ -55,7 +55,7 @@ class StudySyncEngine:
                         stats["updated"] += 1
                         logger.info("form_updated", imednet_id=imednet_id, study_id=study.id)
 
-            except (IntegrityError, ValueError, TypeError) as e:
+            except (IntegrityError, ValueError, TypeError, Exception) as e:
                 stats["failed"] += 1
                 logger.error(
                     "form_sync_failed",
@@ -75,3 +75,47 @@ class StudySyncEngine:
             logger.info("forms_soft_deleted", count=soft_delete_count, study_id=study.id)
 
         return stats
+
+    @staticmethod
+    def sync_job_status(study: Study, data_list: list[dict]) -> str:
+        """
+        Synchronizes job statuses from iMednet.
+        Uses update_or_create for idempotency based on imednet_id.
+        """
+        stats = {"created": 0, "updated": 0, "failed": 0}
+
+        for item in data_list:
+            try:
+                with transaction.atomic():
+                    imednet_id = str(item.get("jobId"))
+
+                    _, created = Job.objects.update_or_create(
+                        imednet_id=imednet_id,
+                        defaults={
+                            "study": study,
+                            "batch_id": item.get("batchId"),
+                            "state": item.get("state"),
+                            "date_created": item.get("dateCreated"),
+                            "date_started": item.get("dateStarted"),
+                            "date_finished": item.get("dateFinished"),
+                        }
+                    )
+
+                    if created:
+                        stats["created"] += 1
+                        logger.info("job_created", imednet_id=imednet_id, study_id=study.id)
+                    else:
+                        stats["updated"] += 1
+                        logger.info("job_updated", imednet_id=imednet_id, study_id=study.id)
+
+            except (IntegrityError, ValueError, TypeError, Exception) as e:
+                stats["failed"] += 1
+                logger.error(
+                    "job_sync_failed",
+                    imednet_id=item.get("jobId"),
+                    error=str(e),
+                    payload=item
+                )
+                continue
+
+        return f"Sync completed: {stats['created']} created, {stats['updated']} updated, {stats['failed']} failed."

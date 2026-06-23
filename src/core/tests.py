@@ -1,6 +1,6 @@
 import pytest
 from clinical.models import Study, Provider
-from core.models import Form
+from core.models import Form, Job
 from clinical.services import StudySyncEngine
 
 @pytest.mark.django_db
@@ -130,3 +130,67 @@ def test_sync_forms_soft_deletion():
     ]
     engine.sync_forms(study, data_list_3)
     assert Form.objects.get(imednet_id="302").disabled is False
+
+
+@pytest.mark.django_db
+def test_sync_job_status_idempotency():
+    provider = Provider.objects.create(name="iMednet Provider")
+    study = Study.objects.create(external_id="study-jobs", name="Job Study", provider=provider)
+
+    data_list = [
+        {
+            "jobId": "J1",
+            "batchId": "B1",
+            "state": "In Progress",
+            "dateCreated": "2024-01-01T10:00:00Z",
+            "dateStarted": "2024-01-01T10:05:00Z",
+            "dateFinished": None,
+        }
+    ]
+
+    engine = StudySyncEngine()
+    result = engine.sync_job_status(study, data_list)
+
+    assert "1 created" in result
+    assert Job.objects.count() == 1
+    job = Job.objects.get(imednet_id="J1")
+    assert job.state == "In Progress"
+
+    # Update
+    data_list[0]["state"] = "Completed"
+    data_list[0]["dateFinished"] = "2024-01-01T11:00:00Z"
+
+    result = engine.sync_job_status(study, data_list)
+    assert "1 updated" in result
+    job.refresh_from_db()
+    assert job.state == "Completed"
+    assert job.date_finished is not None
+
+
+@pytest.mark.django_db
+def test_sync_job_status_partial_failure():
+    provider = Provider.objects.create(name="iMednet Provider")
+    study = Study.objects.create(external_id="study-jobs-fail", name="Job Study Fail", provider=provider)
+
+    data_list = [
+        {
+            "jobId": "J_OK",
+            "batchId": "B1",
+            "state": "Success",
+            "dateCreated": "2024-01-01T10:00:00Z",
+        },
+        {
+            "jobId": "J_FAIL",
+            "batchId": "B1",
+            "state": "Error",
+            "dateCreated": "invalid-date",
+        }
+    ]
+
+    engine = StudySyncEngine()
+    result = engine.sync_job_status(study, data_list)
+
+    assert "1 created" in result
+    assert "1 failed" in result
+    assert Job.objects.filter(imednet_id="J_OK").exists()
+    assert not Job.objects.filter(imednet_id="J_FAIL").exists()

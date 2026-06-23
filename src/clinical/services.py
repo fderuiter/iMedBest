@@ -169,13 +169,13 @@ class StudySyncEngine:
         Synchronizes job status for a given batch from iMednet.
         Uses update_or_create for idempotency based on imednet_id (jobId).
         """
-        # Resolve study context via existing Job records with the same batch_id,
-        # or fallback to an internal tracking mechanism.
-        existing_job = Job.objects.filter(batch_id=batch_id).first()
-        study = existing_job.study if existing_job else Study.objects.first()
+        # Resolve study context via existing Job records with the same batch_id.
+        existing_job = Job.objects.filter(batch_id=batch_id).select_related("study").first()
 
-        if not study:
-            return "Failed: No study found to associate with jobs."
+        if not existing_job:
+            return f"Failed: No study context found for batch_id={batch_id}."
+
+        study = existing_job.study
 
         # Simulated payload based on batch_id
         # In actual use, this would come from a client call to iMednet's Job status endpoint
@@ -191,11 +191,21 @@ class StudySyncEngine:
                         raise ValueError("Missing jobId in payload")
                     imednet_id = str(job_id_raw)
 
+                    payload_batch_id = item.get("batchId")
+                    if payload_batch_id in (None, ""):
+                        raise ValueError("Missing batchId in payload")
+
+                    if str(payload_batch_id) != batch_id:
+                        raise ValueError(
+                            f"Payload batchId mismatch for job {imednet_id}: "
+                            f"expected {batch_id}, got {payload_batch_id}"
+                        )
+
                     _, created = Job.objects.update_or_create(
                         imednet_id=imednet_id,
                         defaults={
                             "study": study,
-                            "batch_id": item.get("batchId"),
+                            "batch_id": str(payload_batch_id),
                             "state": item.get("state"),
                             "date_created": parse_imednet_date_array(item.get("dateCreated")),
                             "date_started": parse_imednet_date_array(item.get("dateStarted"))
@@ -226,7 +236,7 @@ class StudySyncEngine:
         """
         Simulated internal method to fetch job payload from iMednet.
         """
-        return []
+        raise NotImplementedError("Job payload fetch is not implemented for production use.")
 
     @staticmethod
     def sync_codings(study: Study, data_list: list[dict]) -> dict:

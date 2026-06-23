@@ -19,6 +19,15 @@ class TestJobSync:
         study = setup_data
         batch_id = "BATCH-123"
 
+        # Pre-create at least one job to establish study context
+        Job.objects.create(
+            study=study,
+            imednet_id="INITIAL-JOB",
+            batch_id=batch_id,
+            state="PENDING",
+            date_created="2024-01-01T10:00:00Z",
+        )
+
         mock_payload = [
             {
                 "jobId": "JOB-1",
@@ -40,7 +49,7 @@ class TestJobSync:
             result = StudySyncEngine.sync_job_status(batch_id)
 
         assert "Created: 2" in result
-        assert Job.objects.count() == 2
+        assert Job.objects.count() == 3
 
         job1 = Job.objects.get(imednet_id="JOB-1")
         assert job1.state == "COMPLETED"
@@ -55,7 +64,17 @@ class TestJobSync:
         assert job2.date_finished is None
 
     def test_sync_job_status_partial_failure(self, setup_data):
+        study = setup_data
         batch_id = "BATCH-ERR"
+
+        # Pre-create at least one job to establish study context
+        Job.objects.create(
+            study=study,
+            imednet_id="INITIAL-JOB-ERR",
+            batch_id=batch_id,
+            state="PENDING",
+            date_created="2024-01-01T10:00:00Z",
+        )
 
         mock_payload = [
             {
@@ -77,11 +96,21 @@ class TestJobSync:
 
         assert "Created: 1" in result
         assert "Failed: 1" in result
-        assert Job.objects.count() == 1
+        assert Job.objects.count() == 2
         assert Job.objects.filter(imednet_id="JOB-GOOD").exists()
 
     def test_sync_job_status_idempotency(self, setup_data):
+        study = setup_data
         batch_id = "BATCH-1"
+
+        # Pre-create job
+        Job.objects.create(
+            study=study,
+            imednet_id="JOB-1",
+            batch_id=batch_id,
+            state="PENDING",
+            date_created="2024-01-01T10:00:00Z",
+        )
 
         mock_payload = [
             {
@@ -93,8 +122,9 @@ class TestJobSync:
         ]
 
         with patch.object(StudySyncEngine, "_fetch_job_payload", return_value=mock_payload):
-            StudySyncEngine.sync_job_status(batch_id)
+            result = StudySyncEngine.sync_job_status(batch_id)
 
+        assert "Updated: 1" in result
         assert Job.objects.count() == 1
         assert Job.objects.get(imednet_id="JOB-1").state == "RUNNING"
 
@@ -136,3 +166,31 @@ class TestJobSync:
         job = Job.objects.get(imednet_id="JOB-EXISTING")
         assert job.study == other_study
         assert job.state == "COMPLETED"
+
+    def test_sync_job_status_batch_mismatch(self, setup_data):
+        study = setup_data
+        batch_id = "BATCH-EXPECTED"
+
+        Job.objects.create(
+            study=study,
+            imednet_id="JOB-1",
+            batch_id=batch_id,
+            state="PENDING",
+            date_created="2024-01-01T10:00:00Z",
+        )
+
+        mock_payload = [
+            {
+                "jobId": "JOB-1",
+                "batchId": "BATCH-WRONG",
+                "state": "COMPLETED",
+                "dateCreated": [2024, 1, 1, 12, 0, 0, 0],
+            }
+        ]
+
+        with patch.object(StudySyncEngine, "_fetch_job_payload", return_value=mock_payload):
+            result = StudySyncEngine.sync_job_status(batch_id)
+
+        assert "Failed: 1" in result
+        # State should NOT be updated due to mismatch
+        assert Job.objects.get(imednet_id="JOB-1").state == "PENDING"

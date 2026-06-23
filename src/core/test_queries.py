@@ -1,8 +1,11 @@
-import pytest
 from datetime import UTC, datetime
+
+import pytest
+
 from clinical.models import Provider, Study
 from clinical.services import StudySyncEngine
 from core.models import Query, QueryComment, Subject, Variable
+
 
 @pytest.mark.django_db
 def test_sync_queries_create():
@@ -49,7 +52,7 @@ def test_sync_queries_create():
 def test_sync_queries_rebuild_comments():
     provider = Provider.objects.create(name="iMednet")
     study = Study.objects.create(name="Test Study", provider=provider, external_id="study1")
-    subject = Subject.objects.create(study=study, imednet_id="1001", subject_key="S001", subject_status="Active")
+    Subject.objects.create(study=study, imednet_id="1001", subject_key="S001", subject_status="Active")
 
     query_data = [
         {

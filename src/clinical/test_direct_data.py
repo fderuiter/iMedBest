@@ -49,7 +49,7 @@ def test_direct_data_bulk_ingestion():
 
     # Verify metadata is stripped
     adapter = get_storage_adapter()
-    with adapter.open(job.file_path, "rb", contains_phi=False) as f:
+    with adapter.open(job.file_path, "rb", contains_phi=job.contains_phi) as f:
         data = json.loads(f.read().decode("utf-8"))
         for item in data:
             assert "metadata" not in item.get("payload", {})

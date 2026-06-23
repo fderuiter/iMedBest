@@ -237,7 +237,7 @@ class ComplianceStorageProxy:
                     # 1. Payload scanning: check if contains_phi is true
                     if payload.get("contains_phi") is True:
                         return True
-
+                    
                     # 2. Model metadata: check if the model has pii_fields and the payload contains any of them
                     entity_type = item.get("entity_type")
                     if entity_type:
@@ -256,14 +256,14 @@ class ComplianceStorageProxy:
 
     def save(self, name, content, namespace="", contains_phi=None):
         scanned_phi = self._scan_for_phi(content)
-
+        
         if contains_phi is None:
             contains_phi = scanned_phi if scanned_phi else True
         else:
             if scanned_phi and not contains_phi:
                 # Proxy successfully blocks any attempt to write known sensitive model data to insecure storage roots
                 contains_phi = True
-
+        
         file_path = os.path.join(namespace, name) if namespace else name
         action = "SAVE" if contains_phi else "FILE_SAVE"
         self._log_audit(action, file_path, contains_phi=contains_phi)

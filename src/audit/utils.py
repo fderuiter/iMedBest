@@ -82,5 +82,5 @@ def sanitize_changes(instance, changes):
                     changes[field]["old"] = "[REDACTED]"
                 if changes[field].get("new") is not None and changes[field]["new"] != "":
                     changes[field]["new"] = "[REDACTED]"
-
+                    
     return changes

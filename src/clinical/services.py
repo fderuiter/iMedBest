@@ -1,9 +1,11 @@
 import structlog
 from django.db import IntegrityError, transaction
-from core.models import Form, Job
+
 from clinical.models import Study
+from core.models import Form, Job
 
 logger = structlog.get_logger(__name__)
+
 
 class StudySyncEngine:
     """
@@ -26,7 +28,7 @@ class StudySyncEngine:
                     # Map API payload to model fields
                     imednet_id = str(item.get("formId"))
 
-                    form, created = Form.objects.update_or_create(
+                    _, created = Form.objects.update_or_create(
                         imednet_id=imednet_id,
                         defaults={
                             "study": study,
@@ -43,7 +45,7 @@ class StudySyncEngine:
                             "epro_form": item.get("eproForm", False),
                             "allow_copy": item.get("allowCopy", False),
                             "disabled": item.get("disabled", False),
-                        }
+                        },
                     )
 
                     synced_imednet_ids.append(imednet_id)
@@ -57,12 +59,7 @@ class StudySyncEngine:
 
             except (IntegrityError, ValueError, TypeError, Exception) as e:
                 stats["failed"] += 1
-                logger.error(
-                    "form_sync_failed",
-                    imednet_id=item.get("formId"),
-                    error=str(e),
-                    payload=item
-                )
+                logger.error("form_sync_failed", imednet_id=item.get("formId"), error=str(e), payload=item)
                 continue
 
         # Handle soft-deletion for missing records
@@ -98,7 +95,7 @@ class StudySyncEngine:
                             "date_created": item.get("dateCreated"),
                             "date_started": item.get("dateStarted"),
                             "date_finished": item.get("dateFinished"),
-                        }
+                        },
                     )
 
                     if created:
@@ -110,12 +107,7 @@ class StudySyncEngine:
 
             except (IntegrityError, ValueError, TypeError, Exception) as e:
                 stats["failed"] += 1
-                logger.error(
-                    "job_sync_failed",
-                    imednet_id=item.get("jobId"),
-                    error=str(e),
-                    payload=item
-                )
+                logger.error("job_sync_failed", imednet_id=item.get("jobId"), error=str(e), payload=item)
                 continue
 
         return f"Sync completed: {stats['created']} created, {stats['updated']} updated, {stats['failed']} failed."

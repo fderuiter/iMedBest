@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 class MockRequest:
@@ -28,6 +28,6 @@ def parse_imednet_date_array(date_array: list[int] | None) -> datetime | None:
         second = date_array[5] if len(date_array) > 5 else 0
         microsecond = date_array[6] // 1000 if len(date_array) > 6 else 0
 
-        return datetime(year, month, day, hour, minute, second, microsecond, tzinfo=timezone.utc)
+        return datetime(year, month, day, hour, minute, second, microsecond, tzinfo=UTC)
     except (IndexError, ValueError, TypeError):
         return None

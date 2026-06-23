@@ -1,10 +1,12 @@
 import structlog
 from django.db import IntegrityError, transaction
-from core.models import Form, User, UserRole, RecordRevision
-from clinical.models import Study, Subject, Record
+
+from clinical.models import Record, Study, Subject
 from clinical.utils import parse_imednet_date_array
+from core.models import Form, RecordRevision, User, UserRole
 
 logger = structlog.get_logger(__name__)
+
 
 class StudySyncEngine:
     """
@@ -27,7 +29,7 @@ class StudySyncEngine:
                     # Map API payload to model fields
                     imednet_id = str(item.get("formId"))
 
-                    form, created = Form.objects.update_or_create(
+                    _, created = Form.objects.update_or_create(
                         imednet_id=imednet_id,
                         defaults={
                             "study": study,
@@ -44,7 +46,7 @@ class StudySyncEngine:
                             "epro_form": item.get("eproForm", False),
                             "allow_copy": item.get("allowCopy", False),
                             "disabled": item.get("disabled", False),
-                        }
+                        },
                     )
 
                     synced_imednet_ids.append(imednet_id)
@@ -58,12 +60,7 @@ class StudySyncEngine:
 
             except (IntegrityError, ValueError, TypeError) as e:
                 stats["failed"] += 1
-                logger.error(
-                    "form_sync_failed",
-                    imednet_id=item.get("formId"),
-                    error=str(e),
-                    payload=item
-                )
+                logger.error("form_sync_failed", imednet_id=item.get("formId"), error=str(e), payload=item)
                 continue
 
         # Handle soft-deletion for missing records
@@ -101,9 +98,9 @@ class StudySyncEngine:
                         record = Record.all_objects.get(provider=study.provider, external_id=record_id_ext)
                         user_profile = User.objects.get(study=study, imednet_id=user_id_ext)
                     except (Subject.DoesNotExist, Record.DoesNotExist, User.DoesNotExist) as e:
-                        raise ValueError(f"Missing related entity: {str(e)}") from e
+                        raise ValueError(f"Missing related entity: {e!s}") from e
 
-                    revision, created = RecordRevision.objects.update_or_create(
+                    _, created = RecordRevision.objects.update_or_create(
                         imednet_id=imednet_id,
                         defaults={
                             "study": study,
@@ -125,7 +122,7 @@ class StudySyncEngine:
                             "user_raw": item.get("user"),
                             "reason_for_change": item.get("reasonForChange", ""),
                             "deleted": item.get("deleted", False),
-                        }
+                        },
                     )
 
                     if created:
@@ -138,10 +135,7 @@ class StudySyncEngine:
             except (IntegrityError, ValueError, TypeError) as e:
                 stats["failed"] += 1
                 logger.error(
-                    "record_revision_sync_failed",
-                    imednet_id=item.get("recordRevisionId"),
-                    error=str(e),
-                    payload=item
+                    "record_revision_sync_failed", imednet_id=item.get("recordRevisionId"), error=str(e), payload=item
                 )
                 continue
 
@@ -168,7 +162,7 @@ class StudySyncEngine:
                             "last_name": item.get("lastName"),
                             "email": item.get("email"),
                             "user_active_in_study": item.get("userActiveInStudy", True),
-                        }
+                        },
                     )
 
                     # Rebuild roles
@@ -192,12 +186,7 @@ class StudySyncEngine:
 
             except (IntegrityError, ValueError, TypeError) as e:
                 stats["failed"] += 1
-                logger.error(
-                    "user_sync_failed",
-                    imednet_id=item.get("userId"),
-                    error=str(e),
-                    payload=item
-                )
+                logger.error("user_sync_failed", imednet_id=item.get("userId"), error=str(e), payload=item)
                 continue
 
         return stats

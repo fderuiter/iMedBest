@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import Form, User, UserRole, RecordRevision
+
+from .models import Form, RecordRevision, User, UserRole
 
 
 class UserRoleInline(admin.TabularInline):
@@ -13,6 +14,7 @@ class UserAdmin(admin.ModelAdmin):
     """
     Optimized administrator interface for iMednet Users.
     """
+
     list_display = ("login", "email", "user_active_in_study", "study")
     list_filter = ("user_active_in_study", "study")
     search_fields = ("login", "email", "first_name", "last_name", "imednet_id")
@@ -41,6 +43,7 @@ class FormAdmin(admin.ModelAdmin):
     """
     Optimized administrator interface for iMednet Forms.
     """
+
     list_display = ("form_key", "form_name", "form_type", "disabled", "study")
     list_filter = ("disabled", "form_type", "study")
     search_fields = ("form_key", "form_name", "imednet_id")
@@ -75,6 +78,7 @@ class RecordRevisionAdmin(admin.ModelAdmin):
     """
     Optimized administrator interface for iMednet RecordRevisions.
     """
+
     list_display = ("record_revision", "record_status", "user_profile", "reason_for_change", "study")
     list_filter = ("record_status", "study", "deleted")
     search_fields = ("imednet_id", "record_oid", "subject_key", "form_key")
@@ -107,9 +111,4 @@ class RecordRevisionAdmin(admin.ModelAdmin):
         """
         Optimize queryset with select_related to prevent N+1 query degradation.
         """
-        return super().get_queryset(request).select_related(
-            "study",
-            "subject",
-            "record",
-            "user_profile"
-        )
+        return super().get_queryset(request).select_related("study", "subject", "record", "user_profile")

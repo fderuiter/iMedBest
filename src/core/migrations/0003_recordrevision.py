@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0018_alter_syncjob_file_path"),
         ("core", "0002_user_userrole"),
@@ -65,28 +64,20 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "subject_key",
-                    models.CharField(
-                        db_index=True, help_text="External subject key.", max_length=100
-                    ),
+                    models.CharField(db_index=True, help_text="External subject key.", max_length=100),
                 ),
                 ("site_id", models.IntegerField(help_text="External site ID.")),
                 (
                     "form_key",
-                    models.CharField(
-                        db_index=True, help_text="External form key.", max_length=100
-                    ),
+                    models.CharField(db_index=True, help_text="External form key.", max_length=100),
                 ),
                 (
                     "interval_id",
-                    models.IntegerField(
-                        blank=True, help_text="External interval ID.", null=True
-                    ),
+                    models.IntegerField(blank=True, help_text="External interval ID.", null=True),
                 ),
                 (
                     "role",
-                    models.CharField(
-                        help_text="Role associated with the revision.", max_length=255
-                    ),
+                    models.CharField(help_text="Role associated with the revision.", max_length=255),
                 ),
                 (
                     "user_raw",

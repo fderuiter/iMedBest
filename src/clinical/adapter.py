@@ -51,26 +51,22 @@ class MultiVendorAdapter:
                 "resourceType": "MedicationStatement",
                 "id": mapped.get("external_id", "unknown"),
                 "status": "active",
-                "medicationCodeableConcept": {"text": str(mapped.get("value")) if mapped.get("value") else ""}
+                "medicationCodeableConcept": {"text": str(mapped.get("value")) if mapped.get("value") else ""},
             }
-        elif fhir_resource_type == "Observation" or entity_type == "Record":
+        if fhir_resource_type == "Observation" or entity_type == "Record":
             return {
                 "resourceType": "Observation",
                 "id": mapped.get("external_id", "unknown"),
                 "status": "final",
-                "valueString": str(mapped.get("value")) if mapped.get("value") else ""
+                "valueString": str(mapped.get("value")) if mapped.get("value") else "",
             }
-        elif fhir_resource_type == "Patient" or entity_type == "Subject":
+        if fhir_resource_type == "Patient" or entity_type == "Subject":
             return {
                 "resourceType": "Patient",
                 "id": mapped.get("external_id", "unknown"),
-                "name": [{"text": mapped.get("name")}] if mapped.get("name") else []
+                "name": [{"text": mapped.get("name")}] if mapped.get("name") else [],
             }
-        else:
-            return {
-                "resourceType": fhir_resource_type or "Basic",
-                "id": mapped.get("external_id", "unknown")
-            }
+        return {"resourceType": fhir_resource_type or "Basic", "id": mapped.get("external_id", "unknown")}
 
     def sync_entity(self, request, raw_type, payload):
         entity_type = self.resolve_entity_type(raw_type)

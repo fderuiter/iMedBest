@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("core", "0003_recordrevision"),
     ]
@@ -22,8 +21,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name="recordrevision",
             name="user_raw",
-            field=models.CharField(
-                blank=True, help_text="Raw user information.", max_length=255
-            ),
+            field=models.CharField(blank=True, help_text="Raw user information.", max_length=255),
         ),
     ]

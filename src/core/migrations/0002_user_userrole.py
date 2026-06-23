@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0018_alter_syncjob_file_path"),
         ("core", "0001_initial"),

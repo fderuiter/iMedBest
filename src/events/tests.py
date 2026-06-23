@@ -2,7 +2,6 @@ import pytest
 
 from clinical.models import Form, Interval, Record, Site, Study, Subject, Variable, Visit
 from events.models import DeliveryAttempt, OutboundEvent, Subscription
-from events.tasks import process_delivery_attempt
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -46,7 +45,6 @@ def test_event_generation_and_batching(mock_hierarchy, test_subscription):
     # Check if event was generated
     events = OutboundEvent.objects.filter(event_type="Record", action="CREATE")
     assert not events.exists()  # Suppressed due to PHI requirements
-
 
 
 from unittest.mock import patch

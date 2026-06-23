@@ -1,7 +1,10 @@
 import pytest
-from clinical.models import Study, Provider, Subject, Site, Record, Visit, Interval, Variable, Form as ClinicalForm
-from core.models import User, RecordRevision
+
+from clinical.models import Form as ClinicalForm
+from clinical.models import Interval, Provider, Record, Site, Study, Subject, Variable, Visit
 from clinical.services import StudySyncEngine
+from core.models import RecordRevision, User
+
 
 @pytest.mark.django_db
 def test_sync_record_revisions_success():
@@ -50,6 +53,7 @@ def test_sync_record_revisions_success():
     assert rev.subject == subject
     assert rev.user_profile == user
 
+
 @pytest.mark.django_db
 def test_sync_record_revisions_idempotency():
     provider = Provider.objects.create(name="iMednet Provider")
@@ -60,8 +64,8 @@ def test_sync_record_revisions_idempotency():
     visit = Visit.objects.create(external_id="visit-1", subject=subject, interval=interval, provider=provider)
     form = ClinicalForm.objects.create(external_id="form-1", name="Form 1", study=study, provider=provider)
     variable = Variable.objects.create(external_id="var-1", name="Var 1", form=form, provider=provider)
-    record = Record.objects.create(external_id="5001", visit=visit, variable=variable, provider=provider)
-    user = User.objects.create(imednet_id="user-1", login="jdoe", study=study)
+    Record.objects.create(external_id="5001", visit=visit, variable=variable, provider=provider)
+    User.objects.create(imednet_id="user-1", login="jdoe", study=study)
 
     data_list = [
         {
@@ -97,6 +101,7 @@ def test_sync_record_revisions_idempotency():
     rev = RecordRevision.objects.get(imednet_id="rev-1")
     assert rev.record_status == "Signed"
 
+
 @pytest.mark.django_db
 def test_sync_record_revisions_partial_failure():
     provider = Provider.objects.create(name="iMednet Provider")
@@ -107,7 +112,7 @@ def test_sync_record_revisions_partial_failure():
     visit = Visit.objects.create(external_id="visit-1", subject=subject, interval=interval, provider=provider)
     form = ClinicalForm.objects.create(external_id="form-1", name="Form 1", study=study, provider=provider)
     variable = Variable.objects.create(external_id="var-1", name="Var 1", form=form, provider=provider)
-    record = Record.objects.create(external_id="5001", visit=visit, variable=variable, provider=provider)
+    Record.objects.create(external_id="5001", visit=visit, variable=variable, provider=provider)
     User.objects.create(imednet_id="user-1", login="jdoe", study=study)
 
     data_list = [
@@ -127,11 +132,11 @@ def test_sync_record_revisions_partial_failure():
         },
         {
             "recordRevisionId": "rev-fail",
-            "recordId": 9999, # Missing record
+            "recordId": 9999,  # Missing record
             "subjectId": 1001,
             "userId": "user-1",
             "recordStatus": "Fail",
-        }
+        },
     ]
 
     engine = StudySyncEngine()

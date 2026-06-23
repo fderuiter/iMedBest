@@ -144,7 +144,9 @@ class Interval(SyncedResourceBase):
         related_name="imednet_intervals",
         help_text="The study this interval belongs to.",
     )
-    imednet_id = models.CharField(max_length=255, unique=True, db_index=True, help_text="External iMednet ID (intervalId).")
+    imednet_id = models.CharField(
+        max_length=255, unique=True, db_index=True, help_text="External iMednet ID (intervalId)."
+    )
     interval_name = models.CharField(max_length=255)
     interval_description = models.TextField(blank=True)
     interval_sequence = models.IntegerField()

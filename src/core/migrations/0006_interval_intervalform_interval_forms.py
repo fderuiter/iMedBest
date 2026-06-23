@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0018_alter_syncjob_file_path"),
         ("core", "0005_alter_recordrevision_role_and_more"),
@@ -94,15 +93,11 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "form",
-                    models.ForeignKey(
-                        on_delete=django.db.models.deletion.CASCADE, to="core.form"
-                    ),
+                    models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to="core.form"),
                 ),
                 (
                     "interval",
-                    models.ForeignKey(
-                        on_delete=django.db.models.deletion.CASCADE, to="core.interval"
-                    ),
+                    models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to="core.interval"),
                 ),
             ],
             options={
@@ -112,8 +107,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="interval",
             name="forms",
-            field=models.ManyToManyField(
-                related_name="intervals", through="core.IntervalForm", to="core.form"
-            ),
+            field=models.ManyToManyField(related_name="intervals", through="core.IntervalForm", to="core.form"),
         ),
     ]

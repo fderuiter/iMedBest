@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Form, RecordRevision, User, UserRole
+from .models import Form, Interval, RecordRevision, User, UserRole
 
 
 class UserRoleInline(admin.TabularInline):
@@ -112,3 +112,42 @@ class RecordRevisionAdmin(admin.ModelAdmin):
         Optimize queryset with select_related to prevent N+1 query degradation.
         """
         return super().get_queryset(request).select_related("study", "subject", "record", "user_profile")
+
+
+@admin.register(Interval)
+class IntervalAdmin(admin.ModelAdmin):
+    """
+    Optimized administrator interface for iMednet Intervals.
+    """
+
+    list_display = ("interval_name", "interval_sequence", "disabled", "study")
+    list_filter = ("disabled", "study")
+    search_fields = ("interval_name", "imednet_id", "interval_group_name")
+
+    # All incoming remote API fields are read-only to ensure data integrity
+    readonly_fields = (
+        "study",
+        "imednet_id",
+        "interval_name",
+        "interval_description",
+        "interval_sequence",
+        "interval_group_id",
+        "interval_group_name",
+        "timeline",
+        "defined_using_interval",
+        "window_calculation_form",
+        "window_calculation_date",
+        "actual_date_form",
+        "actual_date",
+        "due_date_will_be_in",
+        "negative_slack",
+        "positive_slack",
+        "epro_grace_period",
+        "disabled",
+    )
+
+    def get_queryset(self, request):
+        """
+        Optimize queryset with select_related and prefetch_related to prevent N+1 query degradation.
+        """
+        return super().get_queryset(request).select_related("study").prefetch_related("forms")

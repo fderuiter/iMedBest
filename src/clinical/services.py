@@ -3,7 +3,7 @@ from django.db import IntegrityError, transaction
 
 from clinical.models import Record, Study, Subject
 from clinical.utils import parse_imednet_date_array
-from core.models import Form, RecordRevision, User, UserRole
+from core.models import Form, Interval, IntervalForm, RecordRevision, User, UserRole
 
 logger = structlog.get_logger(__name__)
 
@@ -138,6 +138,88 @@ class StudySyncEngine:
                     "record_revision_sync_failed", imednet_id=item.get("recordRevisionId"), error=str(e), payload=item
                 )
                 continue
+
+        return stats
+
+    @staticmethod
+    def sync_intervals(study: Study, data_list: list[dict]) -> dict:
+        """
+        Synchronizes interval metadata and their associated forms from iMednet.
+        Uses update_or_create for idempotency based on imednet_id.
+        Handles soft-deletion for intervals missing from the payload.
+        """
+        stats = {"created": 0, "updated": 0, "failed": 0, "soft_deleted": 0}
+        synced_imednet_ids = []
+
+        for item in data_list:
+            try:
+                with transaction.atomic():
+                    imednet_id = str(item.get("intervalId"))
+
+                    interval, created = Interval.objects.update_or_create(
+                        imednet_id=imednet_id,
+                        defaults={
+                            "study": study,
+                            "interval_name": item.get("intervalName"),
+                            "interval_description": item.get("intervalDescription", ""),
+                            "interval_sequence": item.get("intervalSequence"),
+                            "interval_group_id": item.get("intervalGroupId"),
+                            "interval_group_name": item.get("intervalGroupName"),
+                            "timeline": item.get("timeline"),
+                            "defined_using_interval": item.get("definedUsingInterval", ""),
+                            "window_calculation_form": item.get("windowCalculationForm", ""),
+                            "window_calculation_date": item.get("windowCalculationDate", ""),
+                            "actual_date_form": item.get("actualDateForm", ""),
+                            "actual_date": item.get("actualDate", ""),
+                            "due_date_will_be_in": item.get("dueDateWillBeIn"),
+                            "negative_slack": item.get("negativeSlack"),
+                            "positive_slack": item.get("positiveSlack"),
+                            "epro_grace_period": item.get("eproGracePeriod"),
+                            "disabled": item.get("disabled", False),
+                        },
+                    )
+
+                    # Rebuild forms junction
+                    # We only link forms that already exist in our database
+                    IntervalForm.objects.filter(interval=interval).delete()
+                    forms_data = item.get("forms", [])
+                    if isinstance(forms_data, list):
+                        for form_item in forms_data:
+                            form_id_ext = str(form_item.get("formId"))
+                            try:
+                                form = Form.objects.get(study=study, imednet_id=form_id_ext)
+                                IntervalForm.objects.create(interval=interval, form=form)
+                            except Form.DoesNotExist:
+                                logger.warning(
+                                    "interval_form_sync_missing_form",
+                                    interval_id=imednet_id,
+                                    form_id=form_id_ext,
+                                    study_id=study.id,
+                                )
+
+                    synced_imednet_ids.append(imednet_id)
+
+                    if created:
+                        stats["created"] += 1
+                        logger.info("interval_created", imednet_id=imednet_id, study_id=study.id)
+                    else:
+                        stats["updated"] += 1
+                        logger.info("interval_updated", imednet_id=imednet_id, study_id=study.id)
+
+            except (IntegrityError, ValueError, TypeError) as e:
+                stats["failed"] += 1
+                logger.error("interval_sync_failed", imednet_id=item.get("intervalId"), error=str(e), payload=item)
+                continue
+
+        # Handle soft-deletion for missing records
+        to_soft_delete = Interval.objects.filter(study=study, disabled=False).exclude(
+            imednet_id__in=synced_imednet_ids
+        )
+        soft_delete_count = to_soft_delete.update(disabled=True)
+        stats["soft_deleted"] = soft_delete_count
+
+        if soft_delete_count > 0:
+            logger.info("intervals_soft_deleted", count=soft_delete_count, study_id=study.id)
 
         return stats
 

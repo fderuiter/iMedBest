@@ -30,7 +30,10 @@ def get_hierarchical_batch(instance):
         # Prevent duplicates
         if not any(e["id"] == str(obj.pk) and e["type"] == obj.__class__.__name__ for e in entities):
             data = {}
+            pii_fields = getattr(obj, "pii_fields", [])
             for field in obj._meta.fields:
+                if field.name in pii_fields:
+                    continue
                 val = getattr(obj, field.name)
                 # Serialize special types
                 if isinstance(val, UUID):

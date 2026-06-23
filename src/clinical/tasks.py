@@ -150,10 +150,10 @@ def process_direct_data_job(self, job_id):
         adapter_instance = MultiVendorAdapter(job.provider)
         storage_adapter = get_storage_adapter()
 
-        if not job.file_path or not storage_adapter.exists(job.file_path, contains_phi=False):
+        if not job.file_path or not storage_adapter.exists(job.file_path, contains_phi=job.contains_phi):
             raise FileNotFoundError("Direct Data payload file missing")
 
-        with storage_adapter.open(job.file_path, "rb", contains_phi=False) as f:
+        with storage_adapter.open(job.file_path, "rb", contains_phi=job.contains_phi) as f:
             raw_data = json.load(f)
 
         entities = [EntityPayload(**ent) for ent in raw_data]

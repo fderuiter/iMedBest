@@ -44,7 +44,11 @@ def test_event_generation_and_batching(mock_hierarchy, test_subscription):
 
     # Check if event was generated
     events = OutboundEvent.objects.filter(event_type="Record", action="CREATE")
-    assert not events.exists()  # Suppressed due to PHI requirements
+    assert events.exists()
+
+    event = events.first()
+    record_payload = next(item for item in event.payload if item["type"] == "Record")
+    assert "value" not in record_payload["data"]  # PII is stripped
 
 
 from unittest.mock import patch
@@ -65,7 +69,7 @@ def test_background_worker(mock_hierarchy, test_subscription):
         )
 
         attempt = DeliveryAttempt.objects.filter(event__event_type="Record").last()
-        assert attempt is None  # Suppressed due to PHI requirements
+        assert attempt is not None
 
 
 def test_subscription_filtering(mock_hierarchy):
@@ -82,8 +86,11 @@ def test_subscription_filtering(mock_hierarchy):
     subject.name = "New Name"
     subject.save()
 
-    # There should NOT be an OutboundEvent for Subject due to suppression
-    assert not OutboundEvent.objects.filter(event_type="Subject", action="UPDATE").exists()
+    # There SHOULD be an OutboundEvent for Subject
+    event = OutboundEvent.objects.filter(event_type="Subject", action="UPDATE").last()
+    assert event is not None
+    subject_payload = next(item for item in event.payload if item["type"] == "Subject")
+    assert "name" not in subject_payload["data"]  # PII stripped
 
     # NO delivery attempt for the subscriber filtering for Record
     assert DeliveryAttempt.objects.count() == 0
@@ -97,5 +104,5 @@ def test_subscription_filtering(mock_hierarchy):
         provider=variable.provider,
     )
 
-    # NOW there still should be NO delivery attempt
-    assert DeliveryAttempt.objects.count() == 0
+    # NOW there should be a delivery attempt for the Record
+    assert DeliveryAttempt.objects.count() == 1

@@ -1,5 +1,6 @@
 import structlog
 from django.db import IntegrityError, transaction
+from django.utils.dateparse import parse_date
 
 from clinical.models import Record, Site, Study
 from clinical.models import Subject as ClinicalSubject
@@ -13,6 +14,7 @@ from core.models import (
     User,
     UserRole,
     Variable,
+    Visit,
 )
 from core.models import (
     Subject as CoreSubject,
@@ -362,6 +364,62 @@ class StudySyncEngine:
 
         if soft_delete_count > 0:
             logger.info("intervals_soft_deleted", count=soft_delete_count, study_id=study.id)
+
+        return stats
+
+    @staticmethod
+    def sync_visits(study: Study, data_list: list[dict]) -> dict:
+        """
+        Synchronizes visit metadata from iMednet.
+        Uses update_or_create for idempotency based on imednet_id.
+        """
+        stats = {"created": 0, "updated": 0, "failed": 0}
+
+        for item in data_list:
+            try:
+                with transaction.atomic():
+                    # Map API payload to model fields
+                    imednet_id = str(item.get("visitId"))
+
+                    # Lookup related entities by their external keys
+                    subject_key = item.get("subjectKey")
+                    interval_name = item.get("intervalName")
+
+                    try:
+                        subject = CoreSubject.objects.get(study=study, subject_key=subject_key)
+                        interval = Interval.objects.get(study=study, interval_name=interval_name)
+                    except (CoreSubject.DoesNotExist, Interval.DoesNotExist) as e:
+                        raise ValueError(f"Missing related entity: {e!s}") from e
+
+                    _, created = Visit.objects.update_or_create(
+                        imednet_id=imednet_id,
+                        defaults={
+                            "study": study,
+                            "subject": subject,
+                            "interval": interval,
+                            "interval_name_raw": interval_name,
+                            "subject_key_raw": subject_key,
+                            "start_date": parse_date(item.get("startDate")) if item.get("startDate") else None,
+                            "end_date": parse_date(item.get("endDate")) if item.get("endDate") else None,
+                            "due_date": parse_date(item.get("dueDate")) if item.get("dueDate") else None,
+                            "visit_date": parse_date(item.get("visitDate")) if item.get("visitDate") else None,
+                            "visit_date_form": item.get("visitDateForm", ""),
+                            "deleted": item.get("deleted", False),
+                            "visit_date_question": item.get("visitDateQuestion", ""),
+                        },
+                    )
+
+                    if created:
+                        stats["created"] += 1
+                        logger.info("visit_created", imednet_id=imednet_id, study_id=study.id)
+                    else:
+                        stats["updated"] += 1
+                        logger.info("visit_updated", imednet_id=imednet_id, study_id=study.id)
+
+            except (IntegrityError, ValueError, TypeError) as e:
+                stats["failed"] += 1
+                logger.error("visit_sync_failed", imednet_id=item.get("visitId"), error=str(e), payload=item)
+                continue
 
         return stats
 

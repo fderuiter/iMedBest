@@ -274,3 +274,43 @@ class SubjectKeyword(models.Model):
 
     def __str__(self):
         return f"{self.keyword} for {self.subject.subject_key}"
+
+
+class Visit(SyncedResourceBase):
+    """
+    Represents an iMednet Visit entity.
+    """
+
+    study = models.ForeignKey(
+        "clinical.Study",
+        on_delete=models.PROTECT,
+        related_name="imednet_visits",
+        help_text="The study this visit belongs to.",
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name="imednet_visits",
+        help_text="The subject this visit belongs to.",
+    )
+    interval = models.ForeignKey(
+        Interval,
+        on_delete=models.PROTECT,
+        related_name="imednet_visits",
+        help_text="The interval this visit belongs to.",
+    )
+    imednet_id = models.CharField(
+        max_length=255, unique=True, db_index=True, help_text="External iMednet ID (visitId)."
+    )
+    interval_name_raw = models.CharField(max_length=255)
+    subject_key_raw = models.CharField(max_length=100)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    due_date = models.DateField(null=True, blank=True)
+    visit_date = models.DateField(null=True, blank=True)
+    visit_date_form = models.CharField(max_length=255, blank=True)
+    deleted = models.BooleanField(default=False)
+    visit_date_question = models.CharField(max_length=100, blank=True)
+
+    def __str__(self):
+        return f"Visit {self.imednet_id} (Subject: {self.subject_key_raw}, Interval: {self.interval_name_raw})"

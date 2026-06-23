@@ -1,9 +1,12 @@
 import structlog
 from django.db import IntegrityError, transaction
-from core.models import Form
+
 from clinical.models import Study
+from clinical.utils import parse_imednet_date_array
+from core.models import Form, User, UserRole
 
 logger = structlog.get_logger(__name__)
+
 
 class StudySyncEngine:
     """
@@ -26,7 +29,7 @@ class StudySyncEngine:
                     # Map API payload to model fields
                     imednet_id = str(item.get("formId"))
 
-                    form, created = Form.objects.update_or_create(
+                    _form, created = Form.objects.update_or_create(
                         imednet_id=imednet_id,
                         defaults={
                             "study": study,
@@ -43,7 +46,7 @@ class StudySyncEngine:
                             "epro_form": item.get("eproForm", False),
                             "allow_copy": item.get("allowCopy", False),
                             "disabled": item.get("disabled", False),
-                        }
+                        },
                     )
 
                     synced_imednet_ids.append(imednet_id)
@@ -57,12 +60,7 @@ class StudySyncEngine:
 
             except (IntegrityError, ValueError, TypeError) as e:
                 stats["failed"] += 1
-                logger.error(
-                    "form_sync_failed",
-                    imednet_id=item.get("formId"),
-                    error=str(e),
-                    payload=item
-                )
+                logger.error("form_sync_failed", imednet_id=item.get("formId"), error=str(e), payload=item)
                 continue
 
         # Handle soft-deletion for missing records
@@ -73,5 +71,55 @@ class StudySyncEngine:
 
         if soft_delete_count > 0:
             logger.info("forms_soft_deleted", count=soft_delete_count, study_id=study.id)
+
+        return stats
+
+    @staticmethod
+    def sync_users(study: Study, data_list: list[dict]) -> dict:
+        """
+        Synchronizes user metadata and roles from iMednet.
+        Uses update_or_create for idempotency based on imednet_id.
+        """
+        stats = {"created": 0, "updated": 0, "failed": 0}
+
+        for item in data_list:
+            try:
+                with transaction.atomic():
+                    imednet_id = str(item.get("userId"))
+                    user, created = User.objects.update_or_create(
+                        imednet_id=imednet_id,
+                        defaults={
+                            "study": study,
+                            "login": item.get("login"),
+                            "first_name": item.get("firstName"),
+                            "last_name": item.get("lastName"),
+                            "email": item.get("email"),
+                            "user_active_in_study": item.get("userActiveInStudy", True),
+                        },
+                    )
+
+                    # Rebuild roles
+                    user.roles.all().delete()
+                    roles_data = item.get("roles", [])
+                    if isinstance(roles_data, list):
+                        for role_item in roles_data:
+                            UserRole.objects.create(
+                                user=user,
+                                role_name=role_item.get("roleName"),
+                                start_date=parse_imednet_date_array(role_item.get("startDate")),
+                                end_date=parse_imednet_date_array(role_item.get("endDate")),
+                            )
+
+                    if created:
+                        stats["created"] += 1
+                        logger.info("user_created", imednet_id=imednet_id, study_id=study.id)
+                    else:
+                        stats["updated"] += 1
+                        logger.info("user_updated", imednet_id=imednet_id, study_id=study.id)
+
+            except (IntegrityError, ValueError, TypeError) as e:
+                stats["failed"] += 1
+                logger.error("user_sync_failed", imednet_id=item.get("userId"), error=str(e), payload=item)
+                continue
 
         return stats

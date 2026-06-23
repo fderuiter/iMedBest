@@ -1,7 +1,9 @@
 import pytest
-from clinical.models import Study, Provider
-from core.models import Form
+
+from clinical.models import Provider, Study
 from clinical.services import StudySyncEngine
+from core.models import Form
+
 
 @pytest.mark.django_db
 def test_sync_forms_idempotency():
@@ -25,7 +27,7 @@ def test_sync_forms_idempotency():
             "formType": "Normal",
             "revision": 1,
             "disabled": False,
-        }
+        },
     ]
 
     # First sync: Create
@@ -40,7 +42,7 @@ def test_sync_forms_idempotency():
     # Second sync: Update existing and add new
     data_list_2 = [
         {
-            "formId": "101", # Existing
+            "formId": "101",  # Existing
             "formKey": "FORM_A",
             "formName": "Form A Updated",
             "formType": "Normal",
@@ -48,13 +50,13 @@ def test_sync_forms_idempotency():
             "disabled": False,
         },
         {
-            "formId": "103", # New
+            "formId": "103",  # New
             "formKey": "FORM_C",
             "formName": "Form C",
             "formType": "Normal",
             "revision": 1,
             "disabled": False,
-        }
+        },
     ]
 
     stats2 = engine.sync_forms(study, data_list_2)
@@ -67,6 +69,7 @@ def test_sync_forms_idempotency():
     assert form_a.form_name == "Form A Updated"
     assert form_a.revision == 2
     assert Form.objects.count() == 3
+
 
 @pytest.mark.django_db
 def test_sync_forms_partial_failure():
@@ -87,7 +90,7 @@ def test_sync_forms_partial_failure():
             "formName": "Form Fail",
             "formType": "Normal",
             "revision": "invalid",
-        }
+        },
     ]
 
     engine = StudySyncEngine()
@@ -97,6 +100,7 @@ def test_sync_forms_partial_failure():
     assert stats["failed"] == 1
     assert Form.objects.filter(imednet_id="201").exists()
     assert not Form.objects.filter(imednet_id="202").exists()
+
 
 @pytest.mark.django_db
 def test_sync_forms_soft_deletion():

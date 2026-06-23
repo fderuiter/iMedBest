@@ -1,4 +1,5 @@
 from django.contrib import admin
+
 from .models import Form
 
 
@@ -7,6 +8,7 @@ class FormAdmin(admin.ModelAdmin):
     """
     Optimized administrator interface for iMednet Forms.
     """
+
     list_display = ("form_key", "form_name", "form_type", "disabled", "study")
     list_filter = ("disabled", "form_type", "study")
     search_fields = ("form_key", "form_name", "imednet_id")

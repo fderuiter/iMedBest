@@ -699,7 +699,10 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
 
     try:
         with transaction.atomic():
-            job = SyncJob.objects.create(user=request.user, provider=provider, status="PENDING")
+            job_contains_phi = any(e.payload.get("contains_phi", False) for e in sorted_entities)
+            job = SyncJob.objects.create(
+                user=request.user, provider=provider, status="PENDING", contains_phi=job_contains_phi
+            )
 
             if len(payload.entities) > 2000:
                 adapter = get_storage_adapter()
@@ -712,7 +715,9 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
 
                 try:
                     raw_data = json.dumps(raw_data_list)
-                    job.file_path = adapter.save(f"sync_job_{job.id}.json", raw_data, namespace="sync_jobs")
+                    job.file_path = adapter.save(
+                        f"sync_job_{job.id}.json", raw_data, namespace="sync_jobs", contains_phi=job.contains_phi
+                    )
                     job.save(update_fields=["file_path"])
                     process_direct_data_job.delay(job.id)
                 except Exception as e:
@@ -729,6 +734,7 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
                         entity_type=entity.entity_type,
                         payload=entity.payload,
                         status="PENDING",
+                        contains_phi=entity.payload.get("contains_phi", False),
                     )
                     task.save()
                     task_objects.append(task)

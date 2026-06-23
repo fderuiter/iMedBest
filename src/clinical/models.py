@@ -353,6 +353,9 @@ class SyncJob(models.Model):
         blank=True,
         help_text="Relative path in the storage adapter for bulk ingestion payloads (>2000 entities), set upon upload.",
     )
+    contains_phi = models.BooleanField(
+        default=False, help_text="Indicates if this job contains Protected Health Information (PHI)."
+    )
 
     def __str__(self):
         return f"Job {self.id} - {self.status}"
@@ -380,6 +383,9 @@ class SyncTask(models.Model):
     retry_count = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    contains_phi = models.BooleanField(
+        default=False, help_text="Indicates if this task contains Protected Health Information (PHI)."
+    )
 
     def __str__(self):
         return f"Task {self.id} for {self.entity_type} - {self.status}"

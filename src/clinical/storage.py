@@ -160,8 +160,9 @@ class ComplianceStorageProxy:
     def base_dir(self):
         return self.primary_adapter.base_dir
 
-    def _log_audit(self, action, path):
-        logger.info(f"AUDIT LOG: PHI-tagged file operation ({action}) for {path}")
+    def _log_audit(self, action, path, contains_phi=False):
+        phi_status_str = "PHI" if contains_phi else "Non-PHI"
+        logger.info(f"AUDIT LOG: {phi_status_str} file operation ({action}) for {path}")
         if AuditLog and get_current_request:
             original_exception = None
             try:
@@ -181,7 +182,7 @@ class ComplianceStorageProxy:
                     action="SECURITY",
                     model_name="ComplianceStorage",
                     object_id=path,
-                    changes={"file_operation": action},
+                    changes={"file_operation": action, "contains_phi": contains_phi},
                     user=user,
                     ip_address=ip_address,
                     user_agent=user_agent,
@@ -195,7 +196,7 @@ class ComplianceStorageProxy:
                     action="SECURITY",
                     model_name="ComplianceStorage",
                     object_id=path,
-                    changes={"file_operation": action},
+                    changes={"file_operation": action, "contains_phi": contains_phi},
                     user=user if "user" in locals() else None,
                     ip_address=ip_address if "ip_address" in locals() else None,
                     user_agent=user_agent if "user_agent" in locals() else None,
@@ -208,7 +209,7 @@ class ComplianceStorageProxy:
     def save(self, name, content, namespace="", contains_phi=False):
         file_path = os.path.join(namespace, name) if namespace else name
         action = "SAVE" if contains_phi else "FILE_SAVE"
-        self._log_audit(action, file_path)
+        self._log_audit(action, file_path, contains_phi=contains_phi)
 
         if contains_phi:
             return self.baa_adapter.save(name, content, namespace)
@@ -232,10 +233,10 @@ class ComplianceStorageProxy:
         if contains_phi is None:
             raise ValueError("contains_phi must be explicitly specified (True or False) for open()")
         if contains_phi is True:
-            self._log_audit(f"OPEN({mode})", path)
+            self._log_audit(f"OPEN({mode})", path, contains_phi=True)
             return self.baa_adapter.open(path, mode)
         # Also audit non-PHI accesses
-        self._log_audit(f"OPEN({mode})", path)
+        self._log_audit(f"OPEN({mode})", path, contains_phi=False)
         return self.primary_adapter.open(path, mode)
 
 

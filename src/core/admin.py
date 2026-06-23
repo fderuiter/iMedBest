@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Form, Interval, RecordRevision, User, UserRole, Variable
+from .models import Form, Interval, RecordRevision, Subject, SubjectKeyword, User, UserRole, Variable
 
 
 class UserRoleInline(admin.TabularInline):
@@ -185,3 +185,40 @@ class VariableAdmin(admin.ModelAdmin):
         Optimize queryset with select_related to prevent N+1 query degradation.
         """
         return super().get_queryset(request).select_related("study", "form")
+
+
+class SubjectKeywordInline(admin.TabularInline):
+    model = SubjectKeyword
+    extra = 0
+    readonly_fields = ("keyword",)
+
+
+@admin.register(Subject)
+class SubjectAdmin(admin.ModelAdmin):
+    """
+    Optimized administrator interface for iMednet Subjects.
+    """
+
+    list_display = ("subject_key", "subject_status", "deleted", "study", "site")
+    list_filter = ("subject_status", "deleted", "study")
+    search_fields = ("subject_key", "imednet_id", "subject_oid")
+    inlines = [SubjectKeywordInline]
+
+    # All incoming remote API fields are read-only to ensure data integrity
+    readonly_fields = (
+        "study",
+        "site",
+        "site_name_raw",
+        "imednet_id",
+        "subject_oid",
+        "subject_key",
+        "subject_status",
+        "enrollment_start_date",
+        "deleted",
+    )
+
+    def get_queryset(self, request):
+        """
+        Optimize queryset with select_related and prefetch_related to prevent N+1 query degradation.
+        """
+        return super().get_queryset(request).select_related("study", "site").prefetch_related("keywords")

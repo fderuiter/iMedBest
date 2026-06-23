@@ -225,3 +225,52 @@ class Variable(SyncedResourceBase):
 
     def __str__(self):
         return f"{self.variable_name} ({self.variable_oid})"
+
+
+class Subject(SyncedResourceBase):
+    """
+    Represents an iMednet Subject entity.
+    """
+
+    study = models.ForeignKey(
+        "clinical.Study",
+        on_delete=models.PROTECT,
+        related_name="imednet_subjects",
+        help_text="The study this subject belongs to.",
+    )
+    site = models.ForeignKey(
+        "clinical.Site",
+        on_delete=models.PROTECT,
+        related_name="imednet_subjects",
+        null=True,
+        blank=True,
+        help_text="The site this subject belongs to.",
+    )
+    site_name_raw = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Raw site name from iMednet, used for error tracking if site lookup fails.",
+    )
+    imednet_id = models.CharField(
+        max_length=255, unique=True, db_index=True, help_text="External iMednet ID (subjectId)."
+    )
+    subject_oid = models.CharField(max_length=255, help_text="External subject OID.")
+    subject_key = models.CharField(max_length=100, unique=True, db_index=True, help_text="External subject key.")
+    subject_status = models.CharField(max_length=100, help_text="Status of the subject.")
+    enrollment_start_date = models.DateTimeField(null=True, blank=True, help_text="Enrollment start date.")
+    deleted = models.BooleanField(default=False, help_text="Indicates if the subject is deleted in iMednet.")
+
+    def __str__(self):
+        return f"{self.subject_key} ({self.subject_status})"
+
+
+class SubjectKeyword(models.Model):
+    """
+    Represents a keyword tag associated with a Subject.
+    """
+
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name="keywords")
+    keyword = models.CharField(max_length=255)
+
+    def __str__(self):
+        return f"{self.keyword} for {self.subject.subject_key}"

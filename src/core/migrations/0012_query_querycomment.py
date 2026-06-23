@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("clinical", "0020_bufferedorphan_contains_phi"),
         ("core", "0011_coding"),
@@ -41,15 +40,11 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "subject_oid",
-                    models.CharField(
-                        help_text="External subject OID (subjectOid).", max_length=255
-                    ),
+                    models.CharField(help_text="External subject OID (subjectOid).", max_length=255),
                 ),
                 (
                     "annotation_type",
-                    models.CharField(
-                        help_text="Type of annotation (annotationType).", max_length=100
-                    ),
+                    models.CharField(help_text="Type of annotation (annotationType).", max_length=100),
                 ),
                 (
                     "query_type",
@@ -71,9 +66,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "variable_raw",
-                    models.CharField(
-                        help_text="Raw variable name from iMednet.", max_length=100
-                    ),
+                    models.CharField(help_text="Raw variable name from iMednet.", max_length=100),
                 ),
                 (
                     "subject_key",
@@ -143,15 +136,11 @@ class Migration(migrations.Migration):
                 ("comment", models.TextField()),
                 (
                     "user_raw",
-                    models.CharField(
-                        help_text="Raw user information from iMednet.", max_length=255
-                    ),
+                    models.CharField(help_text="Raw user information from iMednet.", max_length=255),
                 ),
                 (
                     "date_created",
-                    models.DateTimeField(
-                        help_text="The date and time the comment was created."
-                    ),
+                    models.DateTimeField(help_text="The date and time the comment was created."),
                 ),
                 (
                     "query",

@@ -677,9 +677,10 @@ class StudySyncEngine:
 
                         variable_ref = None
                         if variable_raw:
-                            variable_ref = Variable.objects.filter(
-                                study=study, variable_name=variable_raw
-                            ).first() or Variable.objects.filter(study=study, variable_oid=variable_raw).first()
+                            variable_ref = (
+                                Variable.objects.filter(study=study, variable_name=variable_raw).first()
+                                or Variable.objects.filter(study=study, variable_oid=variable_raw).first()
+                            )
 
                     except CoreSubject.DoesNotExist as e:
                         raise ValueError(f"Missing related subject: {e!s}") from e

@@ -24,13 +24,7 @@ def test_sync_queries_create():
             "recordId": 123,
             "variable": "Var1",
             "subjectKey": "S001",
-            "comments": [
-                {
-                    "comment": "Initial query",
-                    "user": "dr_smith",
-                    "dateCreated": [2023, 10, 27, 10, 0, 0, 0]
-                }
-            ]
+            "comments": [{"comment": "Initial query", "user": "dr_smith", "dateCreated": [2023, 10, 27, 10, 0, 0, 0]}],
         }
     ]
 
@@ -48,6 +42,7 @@ def test_sync_queries_create():
     assert comment.user_raw == "dr_smith"
     assert comment.date_created == datetime(2023, 10, 27, 10, 0, 0, tzinfo=UTC)
 
+
 @pytest.mark.django_db
 def test_sync_queries_rebuild_comments():
     provider = Provider.objects.create(name="iMednet")
@@ -63,7 +58,7 @@ def test_sync_queries_rebuild_comments():
             "description": "Desc",
             "variable": "Var1",
             "subjectKey": "S001",
-            "comments": [{"comment": "C1", "user": "U1", "dateCreated": [2023, 1, 1]}]
+            "comments": [{"comment": "C1", "user": "U1", "dateCreated": [2023, 1, 1]}],
         }
     ]
 
@@ -73,7 +68,7 @@ def test_sync_queries_rebuild_comments():
     # Update with new comments
     query_data[0]["comments"] = [
         {"comment": "C1", "user": "U1", "dateCreated": [2023, 1, 1]},
-        {"comment": "C2", "user": "U2", "dateCreated": [2023, 1, 2]}
+        {"comment": "C2", "user": "U2", "dateCreated": [2023, 1, 2]},
     ]
 
     stats = StudySyncEngine.sync_queries(study, query_data)
@@ -81,6 +76,7 @@ def test_sync_queries_rebuild_comments():
     query = Query.objects.get(imednet_id="ann1")
     assert query.comments.count() == 2
     assert set(query.comments.values_list("comment", flat=True)) == {"C1", "C2"}
+
 
 @pytest.mark.django_db
 def test_sync_queries_partial_failure():
@@ -96,17 +92,17 @@ def test_sync_queries_partial_failure():
             "annotationType": "Query",
             "description": "Valid",
             "variable": "Var1",
-            "subjectKey": "S001"
+            "subjectKey": "S001",
         },
         {
             "annotationId": "ann2",
-            "subjectId": 9999, # Missing subject
+            "subjectId": 9999,  # Missing subject
             "subjectOid": "S_OID2",
             "annotationType": "Query",
             "description": "Invalid",
             "variable": "Var1",
-            "subjectKey": "S002"
-        }
+            "subjectKey": "S002",
+        },
     ]
 
     stats = StudySyncEngine.sync_queries(study, query_data)
@@ -114,12 +110,14 @@ def test_sync_queries_partial_failure():
     assert stats["failed"] == 1
     assert Query.objects.count() == 1
 
+
 @pytest.mark.django_db
 def test_sync_queries_variable_lookup():
     provider = Provider.objects.create(name="iMednet")
     study = Study.objects.create(name="Test Study", provider=provider, external_id="study1")
     Subject.objects.create(study=study, imednet_id="1001", subject_key="S001", subject_status="Active")
     from core.models import Form
+
     form = Form.objects.create(study=study, imednet_id="f1", form_key="FK1", form_name="Form 1", revision=1)
     variable = Variable.objects.create(
         study=study, form=form, imednet_id="v1", variable_name="AgeVar", variable_oid="AGE_OID", sequence=1, revision=1
@@ -133,7 +131,7 @@ def test_sync_queries_variable_lookup():
             "annotationType": "Query",
             "description": "Verify Age",
             "variable": "AgeVar",
-            "subjectKey": "S001"
+            "subjectKey": "S001",
         }
     ]
 

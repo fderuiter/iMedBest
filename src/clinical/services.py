@@ -6,6 +6,7 @@ from clinical.models import Record, Site, Study
 from clinical.models import Subject as ClinicalSubject
 from clinical.utils import parse_imednet_date_array
 from core.models import (
+    Coding,
     Form,
     Interval,
     IntervalForm,
@@ -152,6 +153,72 @@ class StudySyncEngine:
                 logger.error(
                     "record_revision_sync_failed", imednet_id=item.get("recordRevisionId"), error=str(e), payload=item
                 )
+                continue
+
+        return stats
+
+    @staticmethod
+    def sync_codings(study: Study, data_list: list[dict]) -> dict:
+        """
+        Synchronizes coding metadata from iMednet.
+        Uses update_or_create for idempotency based on imednet_id.
+        """
+        stats = {"created": 0, "updated": 0, "failed": 0}
+
+        for item in data_list:
+            try:
+                with transaction.atomic():
+                    imednet_id = str(item.get("codingId"))
+
+                    # Resolve relationships
+                    subject_id_ext = str(item.get("subjectId"))
+                    form_id_ext = str(item.get("formId"))
+                    variable_id_ext = str(item.get("variableId"))
+                    user_id_ext = str(item.get("userId"))
+
+                    try:
+                        subject = CoreSubject.objects.get(study=study, imednet_id=subject_id_ext)
+                        form = Form.objects.get(study=study, imednet_id=form_id_ext)
+                        variable_ref = Variable.objects.get(study=study, imednet_id=variable_id_ext)
+                        coded_by_user = User.objects.get(study=study, imednet_id=user_id_ext)
+                    except (CoreSubject.DoesNotExist, Form.DoesNotExist, Variable.DoesNotExist, User.DoesNotExist) as e:
+                        raise ValueError(f"Missing related entity: {e!s}") from e
+
+                    _, created = Coding.objects.update_or_create(
+                        imednet_id=imednet_id,
+                        defaults={
+                            "study": study,
+                            "subject": subject,
+                            "form": form,
+                            "variable_ref": variable_ref,
+                            "coded_by_user": coded_by_user,
+                            "site_name": item.get("siteName"),
+                            "site_id": item.get("siteId"),
+                            "imednet_subject_id": item.get("subjectId"),
+                            "revision": item.get("revision"),
+                            "imednet_record_id": item.get("recordId"),
+                            "value": item.get("value"),
+                            "code": item.get("code"),
+                            "reason": item.get("reason", ""),
+                            "dictionary_name": item.get("dictionaryName"),
+                            "dictionary_version": item.get("dictionaryVersion"),
+                            "date_coded": parse_imednet_date_array(item.get("dateCoded")),
+                            "subject_key_raw": item.get("subjectKey", ""),
+                            "variable_raw": item.get("variable", ""),
+                            "coded_by_raw": item.get("codedBy", ""),
+                        },
+                    )
+
+                    if created:
+                        stats["created"] += 1
+                        logger.info("coding_created", imednet_id=imednet_id, study_id=study.id)
+                    else:
+                        stats["updated"] += 1
+                        logger.info("coding_updated", imednet_id=imednet_id, study_id=study.id)
+
+            except (IntegrityError, ValueError, TypeError) as e:
+                stats["failed"] += 1
+                logger.error("coding_sync_failed", imednet_id=item.get("codingId"), error=str(e), payload=item)
                 continue
 
         return stats

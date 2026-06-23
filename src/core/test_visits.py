@@ -1,7 +1,9 @@
 import pytest
+
 from clinical.models import Provider, Study
 from clinical.services import StudySyncEngine
-from core.models import Subject, Interval, Visit
+from core.models import Interval, Subject, Visit
+
 
 @pytest.mark.django_db
 def test_sync_visits_idempotency():
@@ -9,9 +11,7 @@ def test_sync_visits_idempotency():
     provider = Provider.objects.create(name="iMednet Provider")
     study = Study.objects.create(external_id="study-123", name="Test Study", provider=provider)
 
-    subject = Subject.objects.create(
-        imednet_id="subj1", subject_key="S001", study=study
-    )
+    subject = Subject.objects.create(imednet_id="subj1", subject_key="S001", study=study)
     interval = Interval.objects.create(
         imednet_id="int1", interval_name="Day 1", study=study, interval_sequence=1, interval_group_id=1
     )
@@ -24,7 +24,7 @@ def test_sync_visits_idempotency():
             "startDate": "2024-01-01",
             "endDate": "2024-01-10",
             "visitDate": "2024-01-05",
-            "deleted": False
+            "deleted": False,
         }
     ]
 
@@ -49,6 +49,7 @@ def test_sync_visits_idempotency():
     visit.refresh_from_db()
     assert str(visit.visit_date) == "2024-01-06"
 
+
 @pytest.mark.django_db
 def test_sync_visits_partial_failure():
     # Setup
@@ -56,7 +57,9 @@ def test_sync_visits_partial_failure():
     study = Study.objects.create(external_id="study-456", name="Test Study 2", provider=provider)
 
     Subject.objects.create(imednet_id="subj1", subject_key="S001", study=study)
-    Interval.objects.create(imednet_id="int1", interval_name="Day 1", study=study, interval_sequence=1, interval_group_id=1)
+    Interval.objects.create(
+        imednet_id="int1", interval_name="Day 1", study=study, interval_sequence=1, interval_group_id=1
+    )
 
     data_list = [
         {
@@ -69,7 +72,7 @@ def test_sync_visits_partial_failure():
             "visitId": "v_fail",
             "subjectKey": "NON_EXISTENT",
             "intervalName": "Day 1",
-        }
+        },
     ]
 
     engine = StudySyncEngine()

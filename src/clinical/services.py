@@ -212,9 +212,7 @@ class StudySyncEngine:
                 continue
 
         # Handle soft-deletion for missing records
-        to_soft_delete = Interval.objects.filter(study=study, disabled=False).exclude(
-            imednet_id__in=synced_imednet_ids
-        )
+        to_soft_delete = Interval.objects.filter(study=study, disabled=False).exclude(imednet_id__in=synced_imednet_ids)
         soft_delete_count = to_soft_delete.update(disabled=True)
         stats["soft_deleted"] = soft_delete_count
 

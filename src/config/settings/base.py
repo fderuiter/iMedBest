@@ -32,7 +32,27 @@ INSTALLED_APPS = [
     "clinical.apps.ClinicalConfig",
     "audit.apps.AuditConfig",
     "events.apps.EventsConfig",
+    "django_auth_adfs",
 ]
+
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "django_auth_adfs.backend.AdfsAuthCodeBackend",
+]
+
+# Microsoft Entra ID (OIDC) Settings
+AUTH_ADFS = {
+    "TENANT_ID": env("AZURE_TENANT_ID"),
+    "CLIENT_ID": env("AZURE_CLIENT_ID"),
+    "CLIENT_SECRET": env("AZURE_CLIENT_SECRET"),
+    "RELYING_PARTY_ID": env("AZURE_CLIENT_ID"),
+    "AUDIENCE": env("AZURE_CLIENT_ID"),
+    "VERSION": "v2.0",
+    "REDIR_URI": env("AZURE_CALLBACK_URL", default=None),
+}
+
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "dashboard"
 
 # Celery Settings
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")

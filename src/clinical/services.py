@@ -14,6 +14,7 @@ from core.models import (
     QueryComment,
     RecordRevision,
     SubjectKeyword,
+    Job,
     User,
     UserRole,
     Variable,
@@ -161,6 +162,71 @@ class StudySyncEngine:
                 continue
 
         return stats
+
+    @staticmethod
+    def sync_job_status(batch_id: str) -> str:
+        """
+        Synchronizes job status for a given batch from iMednet.
+        Uses update_or_create for idempotency based on imednet_id (jobId).
+        """
+        # Resolve study context via existing Job records with the same batch_id,
+        # or fallback to an internal tracking mechanism.
+        existing_job = Job.objects.filter(batch_id=batch_id).first()
+        study = existing_job.study if existing_job else Study.objects.first()
+
+        if not study:
+            return "Failed: No study found to associate with jobs."
+
+        # Simulated payload based on batch_id
+        # In actual use, this would come from a client call to iMednet's Job status endpoint
+        data_list = StudySyncEngine._fetch_job_payload(batch_id)
+
+        stats = {"created": 0, "updated": 0, "failed": 0}
+
+        for item in data_list:
+            try:
+                with transaction.atomic():
+                    job_id_raw = item.get("jobId")
+                    if job_id_raw in (None, ""):
+                        raise ValueError("Missing jobId in payload")
+                    imednet_id = str(job_id_raw)
+
+                    _, created = Job.objects.update_or_create(
+                        imednet_id=imednet_id,
+                        defaults={
+                            "study": study,
+                            "batch_id": item.get("batchId"),
+                            "state": item.get("state"),
+                            "date_created": parse_imednet_date_array(item.get("dateCreated")),
+                            "date_started": parse_imednet_date_array(item.get("dateStarted"))
+                            if item.get("dateStarted")
+                            else None,
+                            "date_finished": parse_imednet_date_array(item.get("dateFinished"))
+                            if item.get("dateFinished")
+                            else None,
+                        },
+                    )
+
+                    if created:
+                        stats["created"] += 1
+                        logger.info("job_created", imednet_id=imednet_id, batch_id=batch_id)
+                    else:
+                        stats["updated"] += 1
+                        logger.info("job_updated", imednet_id=imednet_id, batch_id=batch_id)
+
+            except (IntegrityError, ValueError, TypeError) as e:
+                stats["failed"] += 1
+                logger.error("job_sync_failed", imednet_id=item.get("jobId"), batch_id=batch_id, error=str(e))
+                continue
+
+        return f"Created: {stats['created']}, Updated: {stats['updated']}, Failed: {stats['failed']}"
+
+    @staticmethod
+    def _fetch_job_payload(batch_id: str) -> list[dict]:
+        """
+        Simulated internal method to fetch job payload from iMednet.
+        """
+        return []
 
     @staticmethod
     def sync_codings(study: Study, data_list: list[dict]) -> dict:

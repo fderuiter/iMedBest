@@ -529,3 +529,25 @@ class QueryComment(models.Model):
 
     def __str__(self):
         return f"Comment for Query {self.query.imednet_id} by {self.user_raw}"
+
+
+class Job(SyncedResourceBase):
+    """
+    Represents an iMednet Job entity.
+    """
+
+    study = models.ForeignKey(
+        "clinical.Study",
+        on_delete=models.PROTECT,
+        related_name="imednet_jobs",
+        help_text="The study this job belongs to.",
+    )
+    imednet_id = models.CharField(max_length=255, unique=True, db_index=True, help_text="External iMednet ID (jobId).")
+    batch_id = models.CharField(max_length=255, db_index=True, help_text="External batch ID (batchId).")
+    state = models.CharField(max_length=100)
+    date_created = models.DateTimeField()
+    date_started = models.DateTimeField(null=True, blank=True)
+    date_finished = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Job {self.imednet_id} ({self.state})"

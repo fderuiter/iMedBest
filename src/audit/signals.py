@@ -6,7 +6,7 @@ from django.forms.models import model_to_dict
 
 from .middleware import get_current_request
 from .tasks import create_audit_log_task
-from .utils import extract_study_id
+from .utils import extract_study_id, sanitize_changes
 
 EXCLUDED_MODELS = ["AuditLog", "Session", "LogEntry", "ContentType", "Permission", "Group", "Revision", "Migration"]
 
@@ -33,16 +33,8 @@ def create_audit_log(action, instance, changes=None):
 
     study_id = extract_study_id(instance)
 
-    # Redact tagged PII fields for masked studies
-    if changes and hasattr(instance, "pii_fields") and hasattr(instance, "get_study"):
-        study = instance.get_study()
-        if study and getattr(study, "pii_masking_enabled", False):
-            for field in instance.pii_fields:
-                if field in changes:
-                    if changes[field].get("old") is not None and changes[field]["old"] != "":
-                        changes[field]["old"] = "[REDACTED]"
-                    if changes[field].get("new") is not None and changes[field]["new"] != "":
-                        changes[field]["new"] = "[REDACTED]"
+    # Redact tagged PII fields for masked studies or instances with contains_phi
+    changes = sanitize_changes(instance, changes)
 
     create_audit_log_task.delay(
         action=action,

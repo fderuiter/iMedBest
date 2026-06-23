@@ -1,20 +1,23 @@
+from datetime import UTC, datetime
+
 import pytest
-from clinical.models import Study, Provider
+
+from clinical.models import Provider, Study
 from clinical.services import StudySyncEngine
-from core.models import User, UserRole
 from clinical.utils import parse_imednet_date_array
-from datetime import datetime, timezone
+from core.models import User
+
 
 @pytest.mark.django_db
 def test_parse_imednet_date_array():
     # Valid date array
     date_array = [2026, 5, 13, 14, 6, 50, 612000000]
-    expected = datetime(2026, 5, 13, 14, 6, 50, 612000, tzinfo=timezone.utc)
+    expected = datetime(2026, 5, 13, 14, 6, 50, 612000, tzinfo=UTC)
     assert parse_imednet_date_array(date_array) == expected
 
     # Short date array
     date_array = [2026, 5, 13]
-    expected = datetime(2026, 5, 13, 0, 0, 0, 0, tzinfo=timezone.utc)
+    expected = datetime(2026, 5, 13, 0, 0, 0, 0, tzinfo=UTC)
     assert parse_imednet_date_array(date_array) == expected
 
     # None input
@@ -23,6 +26,7 @@ def test_parse_imednet_date_array():
     # Invalid input
     assert parse_imednet_date_array("not a list") is None
     assert parse_imednet_date_array([2026, "invalid", 13]) is None
+
 
 @pytest.mark.django_db
 def test_sync_users():
@@ -37,13 +41,7 @@ def test_sync_users():
             "lastName": "Doe",
             "email": "john.doe@example.com",
             "userActiveInStudy": True,
-            "roles": [
-                {
-                    "roleName": "Investigator",
-                    "startDate": [2023, 1, 1],
-                    "endDate": [2025, 12, 31]
-                }
-            ]
+            "roles": [{"roleName": "Investigator", "startDate": [2023, 1, 1], "endDate": [2025, 12, 31]}],
         }
     ]
 
@@ -61,7 +59,7 @@ def test_sync_users():
     assert user.roles.count() == 1
     role = user.roles.first()
     assert role.role_name == "Investigator"
-    assert role.start_date == datetime(2023, 1, 1, tzinfo=timezone.utc)
+    assert role.start_date == datetime(2023, 1, 1, tzinfo=UTC)
 
     # Test update
     data_list[0]["firstName"] = "Johnny"

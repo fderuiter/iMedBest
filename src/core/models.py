@@ -464,3 +464,68 @@ class Coding(SyncedResourceBase):
 
     def __str__(self):
         return f"Coding {self.imednet_id} ({self.code})"
+
+
+class Query(SyncedResourceBase):
+    """
+    Represents an iMednet Query entity.
+    """
+
+    study = models.ForeignKey(
+        "clinical.Study",
+        on_delete=models.PROTECT,
+        related_name="imednet_queries",
+        help_text="The study this query belongs to.",
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name="imednet_queries",
+        help_text="The subject this query belongs to.",
+    )
+    record = models.ForeignKey(
+        Record,
+        on_delete=models.PROTECT,
+        related_name="imednet_queries",
+        null=True,
+        blank=True,
+        help_text="The record this query belongs to.",
+    )
+    variable_ref = models.ForeignKey(
+        Variable,
+        on_delete=models.PROTECT,
+        related_name="imednet_queries",
+        null=True,
+        blank=True,
+        help_text="The variable reference this query belongs to.",
+    )
+    imednet_id = models.CharField(
+        max_length=255, unique=True, db_index=True, help_text="External iMednet ID (annotationId)."
+    )
+    imednet_subject_id = models.IntegerField(help_text="External subject ID (subjectId).")
+    subject_oid = models.CharField(max_length=255, help_text="External subject OID (subjectOid).")
+    annotation_type = models.CharField(max_length=100, help_text="Type of annotation (annotationType).")
+    query_type = models.CharField(
+        max_length=100, null=True, blank=True, help_text="Specific query type if applicable (type)."
+    )
+    description = models.TextField(help_text="Query description.")
+    imednet_record_id = models.IntegerField(null=True, blank=True, help_text="External record ID (recordId).")
+    variable_raw = models.CharField(max_length=100, help_text="Raw variable name from iMednet.")
+    subject_key = models.CharField(max_length=100, db_index=True, help_text="External subject key (subjectKey).")
+
+    def __str__(self):
+        return f"Query {self.imednet_id} ({self.annotation_type})"
+
+
+class QueryComment(models.Model):
+    """
+    Represents a comment associated with an iMednet Query.
+    """
+
+    query = models.ForeignKey(Query, on_delete=models.CASCADE, related_name="comments")
+    comment = models.TextField()
+    user_raw = models.CharField(max_length=255, help_text="Raw user information from iMednet.")
+    date_created = models.DateTimeField(help_text="The date and time the comment was created.")
+
+    def __str__(self):
+        return f"Comment for Query {self.query.imednet_id} by {self.user_raw}"

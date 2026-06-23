@@ -3,7 +3,7 @@ from django.db import IntegrityError, transaction
 
 from clinical.models import Record, Study, Subject
 from clinical.utils import parse_imednet_date_array
-from core.models import Form, Interval, IntervalForm, RecordRevision, User, UserRole
+from core.models import Form, Interval, IntervalForm, RecordRevision, User, UserRole, Variable
 
 logger = structlog.get_logger(__name__)
 
@@ -138,6 +138,76 @@ class StudySyncEngine:
                     "record_revision_sync_failed", imednet_id=item.get("recordRevisionId"), error=str(e), payload=item
                 )
                 continue
+
+        return stats
+
+    @staticmethod
+    def sync_variables(study: Study, data_list: list[dict]) -> dict:
+        """
+        Synchronizes variable metadata from iMednet.
+        Uses update_or_create for idempotency based on imednet_id.
+        Handles soft-deletion for variables missing from the payload.
+        """
+        stats = {"created": 0, "updated": 0, "failed": 0, "soft_deleted": 0}
+        synced_imednet_ids = []
+
+        for item in data_list:
+            try:
+                with transaction.atomic():
+                    imednet_id = str(item.get("variableId"))
+                    form_id_ext = str(item.get("formId")) if item.get("formId") else None
+
+                    form = None
+                    if form_id_ext:
+                        try:
+                            form = Form.objects.get(study=study, imednet_id=form_id_ext)
+                        except Form.DoesNotExist:
+                            logger.warning(
+                                "variable_sync_missing_form",
+                                variable_id=imednet_id,
+                                form_id=form_id_ext,
+                                study_id=study.id,
+                            )
+
+                    _, created = Variable.objects.update_or_create(
+                        imednet_id=imednet_id,
+                        defaults={
+                            "study": study,
+                            "form": form,
+                            "form_key_raw": form_id_ext or "",
+                            "variable_type": item.get("variableType"),
+                            "variable_name": item.get("variableName"),
+                            "sequence": item.get("sequence"),
+                            "revision": item.get("revision"),
+                            "disabled": item.get("disabled", False),
+                            "variable_oid": item.get("variableOid"),
+                            "deleted": item.get("deleted", False),
+                            "label": item.get("label", ""),
+                            "blinded": item.get("blinded", False),
+                        },
+                    )
+
+                    synced_imednet_ids.append(imednet_id)
+
+                    if created:
+                        stats["created"] += 1
+                        logger.info("variable_created", imednet_id=imednet_id, study_id=study.id)
+                    else:
+                        stats["updated"] += 1
+                        logger.info("variable_updated", imednet_id=imednet_id, study_id=study.id)
+
+            except (IntegrityError, ValueError, TypeError) as e:
+                stats["failed"] += 1
+                logger.error("variable_sync_failed", imednet_id=item.get("variableId"), error=str(e), payload=item)
+                continue
+
+        # Handle soft-deletion for missing records
+        to_soft_delete = Variable.objects.filter(study=study, deleted=False).exclude(imednet_id__in=synced_imednet_ids)
+        soft_delete_count = to_soft_delete.update(deleted=True)
+        stats["soft_deleted"] = soft_delete_count
+
+        if soft_delete_count > 0:
+            logger.info("variables_soft_deleted", count=soft_delete_count, study_id=study.id)
 
         return stats
 

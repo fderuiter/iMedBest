@@ -131,3 +131,54 @@ class RecordRevision(SyncedResourceBase):
 
     def __str__(self):
         return f"Revision {self.record_revision} for Record {self.record_id} ({self.record_status})"
+
+
+class Interval(SyncedResourceBase):
+    """
+    Represents an iMednet Interval entity.
+    """
+
+    study = models.ForeignKey(
+        "clinical.Study",
+        on_delete=models.PROTECT,
+        related_name="imednet_intervals",
+        help_text="The study this interval belongs to.",
+    )
+    imednet_id = models.CharField(max_length=255, unique=True, db_index=True, help_text="External iMednet ID (intervalId).")
+    interval_name = models.CharField(max_length=255)
+    interval_description = models.TextField(blank=True)
+    interval_sequence = models.IntegerField()
+    interval_group_id = models.IntegerField()
+    interval_group_name = models.CharField(max_length=255)
+    timeline = models.CharField(max_length=100)
+    defined_using_interval = models.CharField(max_length=255, blank=True)
+    window_calculation_form = models.CharField(max_length=255, blank=True)
+    window_calculation_date = models.CharField(max_length=255, blank=True)
+    actual_date_form = models.CharField(max_length=255, blank=True)
+    actual_date = models.CharField(max_length=255, blank=True)
+    due_date_will_be_in = models.IntegerField(null=True, blank=True)
+    negative_slack = models.IntegerField(null=True, blank=True)
+    positive_slack = models.IntegerField(null=True, blank=True)
+    epro_grace_period = models.IntegerField(null=True, blank=True)
+    disabled = models.BooleanField(
+        default=False, help_text="Indicates if the interval is disabled or soft-deleted in iMednet."
+    )
+    forms = models.ManyToManyField(Form, through="IntervalForm", related_name="intervals")
+
+    def __str__(self):
+        return f"{self.interval_name} (Sequence: {self.interval_sequence})"
+
+
+class IntervalForm(models.Model):
+    """
+    Explicit through model for the Many-to-Many relationship between Interval and Form.
+    """
+
+    interval = models.ForeignKey(Interval, on_delete=models.CASCADE)
+    form = models.ForeignKey(Form, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ("interval", "form")
+
+    def __str__(self):
+        return f"{self.interval.interval_name} - {self.form.form_name}"

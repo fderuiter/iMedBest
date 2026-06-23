@@ -18,7 +18,6 @@ def create_event(action, instance):
     # FILTER: Block clinical data (PHI/PII) from reaching outbound events
     return
 
-
     model_name = instance.__class__.__name__
 
     try:

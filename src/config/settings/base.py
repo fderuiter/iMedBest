@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django_celery_results",
+    "core.apps.CoreConfig",
     "users.apps.UsersConfig",
     "clinical.apps.ClinicalConfig",
     "audit.apps.AuditConfig",

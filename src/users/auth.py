@@ -3,13 +3,21 @@ from typing import Any
 
 import jwt
 import requests
+import structlog
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.http import HttpRequest
+from django_auth_adfs.backend import AdfsAccessTokenBackend, AdfsAuthCodeBackend
+from django_auth_adfs.config import provider_config
+from django_auth_adfs.rest_framework import AdfsAccessTokenAuthentication
 from jwt import PyJWKClient
 from ninja.security import HttpBearer
 
 from .models import OIDCConfiguration
 
+logger = structlog.get_logger(__name__)
 User = get_user_model()
 
 
@@ -41,8 +49,8 @@ class OIDCBearer(HttpBearer):
     def authenticate(self, request, token):
         try:
             unverified_claims = jwt.decode(token, options={"verify_signature": False})
-            _ = unverified_claims.get("aud")  # audience — not used for routing but parsed for future use
-            _ = unverified_claims.get("iss")  # issuer — not used for routing but parsed for future use
+            _ = unverified_claims.get("aud")
+            _ = unverified_claims.get("iss")
         except Exception:
             return None
 
@@ -72,7 +80,6 @@ class OIDCBearer(HttpBearer):
                 user, _ = User.objects.get_or_create(username=email, defaults={"email": email})
                 roles = data.get("roles", [])
 
-                # Assign is_staff if "Admin" in roles
                 is_admin = "Admin" in str(roles)
                 if user.is_staff != is_admin:
                     user.is_staff = is_admin
@@ -91,11 +98,7 @@ class OIDCBearer(HttpBearer):
         return None
 
 
-from django.conf import settings
-from django_auth_adfs.backend import AdfsAuthCodeBackend
-
-
-class CustomAdfsAuthCodeBackend(AdfsAuthCodeBackend):
+class CustomAdfsBackendMixin:
     def process_user_groups(self, claims, access_token):
         raw_groups = super().process_user_groups(claims, access_token)
         if not raw_groups:
@@ -121,3 +124,68 @@ class CustomAdfsAuthCodeBackend(AdfsAuthCodeBackend):
 
         combined_groups = list(set(claim_groups) | set(raw_groups))
         super().update_user_flags(user, claims, combined_groups)
+
+    def update_user_attributes(self, user, claims, claim_mapping=None):
+        if claim_mapping is None:
+            claim_mapping = getattr(settings, "AUTH_ADFS", {}).get("CLAIM_MAPPING", {})
+
+        changed = False
+        for field, claim in claim_mapping.items():
+            if claim in claims:
+                new_val = claims[claim]
+                if getattr(user, field) != new_val:
+                    setattr(user, field, new_val)
+                    changed = True
+        if changed:
+            user.save(update_fields=list(claim_mapping.keys()))
+
+    def update_user_groups(self, user, claim_groups):
+        if getattr(settings, "AUTH_ADFS", {}).get("GROUPS_CLAIM") is not None:
+            user_group_names = set(user.groups.all().values_list("name", flat=True))
+            if set(claim_groups) != user_group_names:
+                super().update_user_groups(user, claim_groups)
+
+
+class CustomAdfsAuthCodeBackend(CustomAdfsBackendMixin, AdfsAuthCodeBackend):
+    pass
+
+
+class CustomAdfsAccessTokenBackend(CustomAdfsBackendMixin, AdfsAccessTokenBackend):
+    def authenticate(self, request=None, access_token=None, **kwargs):
+        provider_config.load_config()
+        if access_token is None or access_token == "":
+            return None
+
+        if isinstance(access_token, bytes):
+            access_token = access_token.decode()
+
+        user = self.process_access_token(access_token)
+        if user:
+            return User.objects.select_related("profile").prefetch_related("groups").get(pk=user.pk)
+        return None
+
+    def create_user(self, claims):
+        username_claim = getattr(settings, "AUTH_ADFS", {}).get("USERNAME_CLAIM", "upn")
+
+        is_service_account = False
+        if not claims.get(username_claim) and (claims.get("appid") or claims.get("idtyp") == "app"):
+            is_service_account = True
+            username = claims.get("oid") or claims.get("appid")
+        else:
+            username = claims.get(username_claim)
+
+        if not username:
+            raise PermissionDenied("User claim doesn't have the required username claim")
+
+        with transaction.atomic():
+            user, _ = User.objects.select_for_update().get_or_create(
+                username=username, defaults={"is_service_account": is_service_account}
+            )
+            if not user.password:
+                user.set_unusable_password()
+                user.save(update_fields=["password"])
+        return user
+
+
+class AdfsJWTAuthentication(AdfsAccessTokenAuthentication):
+    pass

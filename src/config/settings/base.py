@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "rest_framework",
     "django_celery_results",
     "core.apps.CoreConfig",
     "users.apps.UsersConfig",
@@ -38,6 +39,7 @@ INSTALLED_APPS = [
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "users.auth.CustomAdfsAuthCodeBackend",
+    "users.auth.CustomAdfsAccessTokenBackend",
 ]
 
 # Microsoft Entra ID (OIDC) Settings
@@ -59,12 +61,23 @@ AUTH_ADFS = {
     "GROUPS_CLAIM": "groups",
     "MIRROR_GROUPS": True,
     "GROUP_TO_FLAG_MAPPING": {"is_staff": ["43063544-e34d-44a6-8025-a7b2169b60b7"]},
+    "CONFIG_RELOAD_INTERVAL": 24,
 }
 
 ADFS_GROUPS_MAPPING = {
     "762c26f0-6101-4475-b657-69c5e3170e5b": "Clinical_Admin",
     "d3269b61-29e2-4161-9c6a-48d5d4d38210": "Data_Analyst",
     "43063544-e34d-44a6-8025-a7b2169b60b7": "IT Manager",
+}
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "users.auth.AdfsJWTAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
 }
 
 LOGIN_URL = "login"
@@ -88,6 +101,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "audit.middleware.AuditMiddleware",
+    "users.middleware.JWTRuntimeErrorHandlerMiddleware",
     "clinical.api.StripSyncMetadataMiddleware",
 ]
 

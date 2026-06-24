@@ -28,7 +28,7 @@ from audit.api import router as audit_router
 from clinical.api import router as clinical_router
 from clinical.views import DashboardView, RetriggerTimelineTaskView
 from users.api import router as users_router
-from users.views import LoginView
+from users.views import HealthCheckView, LoginView
 
 
 def health_check(request):
@@ -49,4 +49,5 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", api.urls),
     path("health", health_check, name="health"),
+    path("api/v1/health-check/", HealthCheckView.as_view(), name="api_health_check"),
 ]

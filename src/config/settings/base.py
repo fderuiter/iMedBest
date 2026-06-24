@@ -38,6 +38,7 @@ INSTALLED_APPS = [
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "users.auth.CustomAdfsAuthCodeBackend",
+    "users.auth.CustomAdfsAccessTokenBackend",
 ]
 
 # Microsoft Entra ID (OIDC) Settings
@@ -87,6 +88,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "users.middleware.JWTRuntimeErrorHandlerMiddleware",
     "audit.middleware.AuditMiddleware",
     "clinical.api.StripSyncMetadataMiddleware",
 ]

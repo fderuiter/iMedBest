@@ -21,6 +21,7 @@ ninja.orm.ModelSchema.model_config["populate_by_name"] = True
 
 class JWTBearer(HttpBearer):
     def authenticate(self, request, token):
+        from django.contrib.auth import authenticate
         from ninja.errors import HttpError
 
         from users.jwt import decode_jwt_token
@@ -38,7 +39,16 @@ class JWTBearer(HttpBearer):
         if not provider_id:
             raise HttpError(400, "Missing valid provider context")
 
-        user = decode_jwt_token(token)
+        # Try Entra ID first
+        try:
+            user = authenticate(request, access_token=token)
+        except Exception:
+            user = None
+
+        # Fallback to internal tokens
+        if not user:
+            user = decode_jwt_token(token)
+
         if user:
             from clinical.models import Provider
 
@@ -51,10 +61,13 @@ class JWTBearer(HttpBearer):
             request.studyKey = studyKey
             request.siteKey = siteKey
             request.provider = provider
-            # Assign user_roles needed for export to users authenticated via JWT
-            # In a full Entra setup, this would map groups/roles from the token
-            # For now, give them "extractor" role so CDISC export isn't totally blocked
-            request.user_roles = ["extractor"]
+
+            # Sync user roles from Entra ID groups if available
+            if hasattr(user, "groups"):
+                request.user_roles = list(user.groups.values_list("name", flat=True))
+            else:
+                request.user_roles = ["extractor"]
+
             return token
         return None
 

@@ -3,14 +3,67 @@ from typing import Any
 
 import jwt
 import requests
+import structlog
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.http import HttpRequest
+from django_auth_adfs.backend import AdfsAccessTokenBackend, AdfsAuthCodeBackend
 from jwt import PyJWKClient
 from ninja.security import HttpBearer
 
 from .models import OIDCConfiguration
 
 User = get_user_model()
+logger = structlog.get_logger(__name__)
+
+
+class CustomAdfsBackendMixin:
+    def process_user_groups(self, claims, access_token):
+        raw_groups = super().process_user_groups(claims, access_token)
+        if not raw_groups:
+            return []
+
+        mapped_groups = []
+        group_mapping = getattr(settings, "ADFS_GROUPS_MAPPING", {})
+
+        for group in raw_groups:
+            if group in group_mapping:
+                mapped_groups.append(group_mapping[group])
+            else:
+                mapped_groups.append(group)
+        return mapped_groups
+
+    def update_user_flags(self, user, claims, claim_groups):
+        adfs_settings = getattr(settings, "AUTH_ADFS", {})
+        groups_claim = adfs_settings.get("GROUPS_CLAIM", "groups")
+
+        raw_groups = claims.get(groups_claim, [])
+        if not isinstance(raw_groups, list):
+            raw_groups = [raw_groups]
+
+        combined_groups = list(set(claim_groups) | set(raw_groups))
+        super().update_user_flags(user, claims, combined_groups)
+
+    def create_user(self, claims):
+        username_claim = getattr(settings, "AUTH_ADFS", {}).get("USERNAME_CLAIM", "upn")
+        username = claims.get(username_claim)
+        if not username:
+            return None
+
+        with transaction.atomic():
+            user, created = User.objects.select_for_update().get_or_create(
+                username=username,
+                defaults={
+                    "email": claims.get("email", username),
+                    "is_active": True,
+                },
+            )
+            if created:
+                user.set_unusable_password()
+                user.save(update_fields=["password"])
+                logger.info("user_provisioned", username=username, source="EntraID")
+            return user
 
 
 @lru_cache(maxsize=10)
@@ -39,16 +92,28 @@ class OIDCBearer(HttpBearer):
         return result
 
     def authenticate(self, request, token):
+        from django.contrib.auth import authenticate
+
+        # Try Entra ID first via our custom access token backend
         try:
-            unverified_claims = jwt.decode(token, options={"verify_signature": False})
-            _ = unverified_claims.get("aud")  # audience — not used for routing but parsed for future use
-            _ = unverified_claims.get("iss")  # issuer — not used for routing but parsed for future use
+            user = authenticate(request, access_token=token)
+        except Exception:
+            user = None
+
+        if user:
+            request.user = user
+            if hasattr(user, "groups"):
+                request.user_roles = list(user.groups.values_list("name", flat=True))
+            return token
+
+        # Fallback to OIDC Providers (Dynamic/Multi-tenant OIDC)
+        try:
+            jwt.decode(token, options={"verify_signature": False})
         except Exception:
             return None
 
         configs = OIDCConfiguration.objects.filter(is_active=True)
 
-        valid_user = None
         for config in configs:
             jwks_uri = get_jwks_uri(config.discovery_url)
             if not jwks_uri:
@@ -79,45 +144,19 @@ class OIDCBearer(HttpBearer):
                     user.save(update_fields=["is_staff"])
 
                 request.user_roles = roles
-                valid_user = user
-                break
+                request.user = user
+                return token
             except Exception:  # noqa: S112
                 continue
-
-        if valid_user:
-            request.user = valid_user
-            return token
 
         return None
 
 
-from django.conf import settings
-from django_auth_adfs.backend import AdfsAuthCodeBackend
 
 
-class CustomAdfsAuthCodeBackend(AdfsAuthCodeBackend):
-    def process_user_groups(self, claims, access_token):
-        raw_groups = super().process_user_groups(claims, access_token)
-        if not raw_groups:
-            return []
+class CustomAdfsAuthCodeBackend(CustomAdfsBackendMixin, AdfsAuthCodeBackend):
+    pass
 
-        mapped_groups = []
-        group_mapping = getattr(settings, "ADFS_GROUPS_MAPPING", {})
 
-        for group in raw_groups:
-            if group in group_mapping:
-                mapped_groups.append(group_mapping[group])
-            else:
-                mapped_groups.append(group)
-        return mapped_groups
-
-    def update_user_flags(self, user, claims, claim_groups):
-        adfs_settings = getattr(settings, "AUTH_ADFS", {})
-        groups_claim = adfs_settings.get("GROUPS_CLAIM", "groups")
-
-        raw_groups = claims.get(groups_claim, [])
-        if not isinstance(raw_groups, list):
-            raw_groups = [raw_groups]
-
-        combined_groups = list(set(claim_groups) | set(raw_groups))
-        super().update_user_flags(user, claims, combined_groups)
+class CustomAdfsAccessTokenBackend(CustomAdfsBackendMixin, AdfsAccessTokenBackend):
+    pass

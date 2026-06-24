@@ -49,6 +49,13 @@ AUTH_ADFS = {
     "AUDIENCE": env("AZURE_CLIENT_ID", default="00000000-0000-0000-0000-000000000000"),
     "VERSION": "v2.0",
     "REDIR_URI": env("AZURE_CALLBACK_URL", default=None),
+    "CREATE_NEW_USERS": True,
+    "CLAIM_MAPPING": {
+        "first_name": "given_name",
+        "last_name": "family_name",
+        "email": "email",
+    },
+    "USERNAME_CLAIM": "upn",
 }
 
 LOGIN_URL = "login"

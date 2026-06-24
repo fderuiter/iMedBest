@@ -8,6 +8,14 @@ class User(AbstractUser):
     pass
 
 
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
+    notifications_enabled = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"Profile for {self.user.username}"
+
+
 class SiteMembership(models.Model):
     ROLE_CHOICES = (("site_investigator", "Site Investigator"),)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="site_memberships")

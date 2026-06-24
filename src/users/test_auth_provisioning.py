@@ -7,6 +7,7 @@ from django_auth_adfs.backend import AdfsAuthCodeBackend
 
 User = get_user_model()
 
+
 @pytest.mark.django_db
 def test_user_provisioning_and_profile_creation():
     """
@@ -25,11 +26,14 @@ def test_user_provisioning_and_profile_creation():
         "email": "jdoe@mednet.com",
     }
 
-    with patch("django_auth_adfs.backend.AdfsAuthCodeBackend.validate_access_token", return_value=claims), \
-         patch("django_auth_adfs.config.ProviderConfig.load_config", return_value=None), \
-         patch("django_auth_adfs.backend.AdfsAuthCodeBackend.exchange_auth_code",
-               return_value={"access_token": "fake-access-token"}):
-
+    with (
+        patch("django_auth_adfs.backend.AdfsAuthCodeBackend.validate_access_token", return_value=claims),
+        patch("django_auth_adfs.config.ProviderConfig.load_config", return_value=None),
+        patch(
+            "django_auth_adfs.backend.AdfsAuthCodeBackend.exchange_auth_code",
+            return_value={"access_token": "fake-access-token"},
+        ),
+    ):
         user = backend.authenticate(request, authorization_code="fake-code")
 
         assert user is not None
@@ -41,6 +45,7 @@ def test_user_provisioning_and_profile_creation():
         # Check if UserProfile was created via signal
         assert hasattr(user, "profile")
         assert user.profile.notifications_enabled is True
+
 
 @pytest.mark.django_db
 def test_manual_user_creation_triggers_profile_creation():

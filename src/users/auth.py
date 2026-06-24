@@ -89,3 +89,35 @@ class OIDCBearer(HttpBearer):
             return token
 
         return None
+
+
+from django.conf import settings
+from django_auth_adfs.backend import AdfsAuthCodeBackend
+
+
+class CustomAdfsAuthCodeBackend(AdfsAuthCodeBackend):
+    def process_user_groups(self, claims, access_token):
+        raw_groups = super().process_user_groups(claims, access_token)
+        if not raw_groups:
+            return []
+
+        mapped_groups = []
+        group_mapping = getattr(settings, "ADFS_GROUPS_MAPPING", {})
+
+        for group in raw_groups:
+            if group in group_mapping:
+                mapped_groups.append(group_mapping[group])
+            else:
+                mapped_groups.append(group)
+        return mapped_groups
+
+    def update_user_flags(self, user, claims, claim_groups):
+        adfs_settings = getattr(settings, "AUTH_ADFS", {})
+        groups_claim = adfs_settings.get("GROUPS_CLAIM", "groups")
+
+        raw_groups = claims.get(groups_claim, [])
+        if not isinstance(raw_groups, list):
+            raw_groups = [raw_groups]
+
+        combined_groups = list(set(claim_groups) | set(raw_groups))
+        super().update_user_flags(user, claims, combined_groups)

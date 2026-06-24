@@ -1,10 +1,14 @@
-import pytest
+import contextlib
 from unittest.mock import patch
-from django.test import RequestFactory
-from users.auth import CustomAdfsAuthCodeBackend
+
+import pytest
 from django.contrib.auth import get_user_model
+from django.test import RequestFactory
+
+from users.auth import CustomAdfsAuthCodeBackend
 
 User = get_user_model()
+
 
 @pytest.mark.django_db
 def test_service_principal_claims_logic():
@@ -33,12 +37,10 @@ def test_service_principal_claims_logic():
             "django_auth_adfs.backend.AdfsAuthCodeBackend.exchange_auth_code",
             return_value={"access_token": "fake-access-token"},
         ),
+        contextlib.suppress(Exception),
     ):
-        try:
-            user = backend.authenticate(request, authorization_code="fake-code")
-            print(f"Authenticated user: {user}")
-        except Exception as e:
-            print(f"Caught expected exception: {e}")
+        backend.authenticate(request, authorization_code="fake-code")
+
 
 if __name__ == "__main__":
     # This is just for my diagnostic

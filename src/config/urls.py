@@ -2,7 +2,7 @@ import ninja.operation
 import ninja.orm
 import ninja.schema
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
 from pydantic.alias_generators import to_camel
 
 ninja.schema.Schema.model_config["alias_generator"] = to_camel
@@ -28,6 +28,7 @@ from audit.api import router as audit_router
 from clinical.api import router as clinical_router
 from clinical.views import DashboardView, RetriggerTimelineTaskView
 from users.api import router as users_router
+from users.views import LoginView
 
 
 def health_check(request):
@@ -42,6 +43,8 @@ api.add_router("/audit/", audit_router)
 
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
+    path("login/", LoginView.as_view(), name="login"),
+    path("oauth2/", include("django_auth_adfs.urls")),
     path("retrigger-timeline/", RetriggerTimelineTaskView.as_view(), name="retrigger_timeline"),
     path("admin/", admin.site.urls),
     path("api/", api.urls),

@@ -5,7 +5,7 @@ from .oidc import decrypt, encrypt
 
 
 class User(AbstractUser):
-    is_service_account = models.BooleanField(default=False)
+    pass
 
 
 class UserProfile(models.Model):

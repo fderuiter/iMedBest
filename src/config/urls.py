@@ -28,7 +28,7 @@ from audit.api import router as audit_router
 from clinical.api import router as clinical_router
 from clinical.views import DashboardView, RetriggerTimelineTaskView
 from users.api import router as users_router
-from users.views import LoginView
+from users.views import LoginView, LogoutView
 
 
 def health_check(request):
@@ -44,6 +44,7 @@ api.add_router("/audit/", audit_router)
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
     path("login/", LoginView.as_view(), name="login"),
+    path("logout/", LogoutView.as_view(), name="logout"),
     path("oauth2/", include("django_auth_adfs.urls")),
     path("retrigger-timeline/", RetriggerTimelineTaskView.as_view(), name="retrigger_timeline"),
     path("admin/", admin.site.urls),

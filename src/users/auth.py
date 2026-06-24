@@ -152,8 +152,6 @@ class OIDCBearer(HttpBearer):
         return None
 
 
-
-
 class CustomAdfsAuthCodeBackend(CustomAdfsBackendMixin, AdfsAuthCodeBackend):
     pass
 

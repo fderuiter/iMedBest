@@ -1,4 +1,4 @@
-import structlog
+from core.logging import get_logger
 from django.db import IntegrityError, transaction
 from django.utils.dateparse import parse_date
 
@@ -27,7 +27,7 @@ from core.models import (
     Subject as CoreSubject,
 )
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class StudySyncEngine:

@@ -1,7 +1,7 @@
-import structlog
+from core.logging import get_logger
 from django.db import models
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class SyncedResourceBase(models.Model):

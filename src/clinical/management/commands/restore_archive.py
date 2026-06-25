@@ -1,8 +1,9 @@
-import os
-
 from django.core import serializers
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+
+from audit.utils import AdminContext
+from clinical.storage import get_storage_adapter
 
 
 class Command(BaseCommand):
@@ -14,20 +15,22 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         filepath = options["filepath"]
 
-        if not os.path.exists(filepath):
+        storage_adapter = get_storage_adapter()
+
+        if not storage_adapter.exists(filepath):
             raise CommandError(f"File not found: {filepath}")
 
         self.stdout.write(f"Restoring archive from: {filepath}")
 
         try:
-            with open(filepath, encoding="utf-8") as f:
+            with AdminContext(), storage_adapter.open(filepath, "r", encoding="utf-8") as f:
                 data = f.read()
 
-            objects = list(serializers.deserialize("json", data))
+                objects = list(serializers.deserialize("json", data))
 
-            with transaction.atomic():
-                for obj in objects:
-                    obj.save()
+                with transaction.atomic():
+                    for obj in objects:
+                        obj.save()
 
             self.stdout.write(self.style.SUCCESS(f"Successfully restored {len(objects)} records."))
         except Exception as e:

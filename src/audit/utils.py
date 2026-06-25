@@ -1,6 +1,51 @@
 from django.db import models
 
 
+class AdminRequest:
+    def __init__(self, user):
+        self.user = user
+        self.META = {"REMOTE_ADDR": "127.0.0.1", "HTTP_USER_AGENT": "Management Command"}
+        self.path = "/management/command"
+
+
+class AdminContext:
+    def __init__(self, user=None):
+        self.user = user
+        self.token = None
+        self.audit_token = None
+
+    def __enter__(self):
+        from django.contrib.auth import get_user_model
+
+        from audit.middleware import _request_ctx_var
+        from audit.signals import audit_override_bulk_flags
+
+        User = get_user_model()
+        if not self.user:
+            self.user, _ = User.objects.get_or_create(
+                username="admin_service",
+                defaults={
+                    "is_staff": True,
+                    "is_superuser": True,
+                    "email": "admin@service.local",
+                    "first_name": "Administrative",
+                    "last_name": "Service",
+                },
+            )
+
+        request = AdminRequest(self.user)
+        self.token = _request_ctx_var.set(request)
+        self.audit_token = audit_override_bulk_flags.set(True)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        from audit.middleware import _request_ctx_var
+        from audit.signals import audit_override_bulk_flags
+
+        _request_ctx_var.reset(self.token)
+        audit_override_bulk_flags.reset(self.audit_token)
+
+
 def extract_study_id(instance):
     if instance.__class__.__name__ == "Study":
         return getattr(instance, "id", None)

@@ -5,7 +5,7 @@ from clinical.services import StudySyncEngine
 from core.models import Interval, Subject, Visit
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_visits_idempotency():
     # Setup
     provider = Provider.objects.create(name="iMednet Provider")
@@ -50,7 +50,7 @@ def test_sync_visits_idempotency():
     assert str(visit.visit_date) == "2024-01-06"
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_visits_partial_failure():
     # Setup
     provider = Provider.objects.create(name="iMednet Provider")

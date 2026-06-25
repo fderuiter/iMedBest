@@ -29,7 +29,7 @@ def process_all_jobs():
             break
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_multi_level_data_import(client):
     headers = get_auth_headers("study-1")
     # Level 1
@@ -230,7 +230,7 @@ def test_longitudinal_reconstruction(client):
     assert values == ["85", "90"]
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_job_endpoint(client):
     headers = get_auth_headers("study-async")
     from clinical.models import SyncJob
@@ -264,7 +264,7 @@ def test_sync_job_endpoint(client):
     assert job.tasks.count() == 2
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_job_atomic_failure(client):
     headers = get_auth_headers("study-atomic")
 

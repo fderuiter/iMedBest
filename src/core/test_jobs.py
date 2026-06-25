@@ -7,9 +7,9 @@ from clinical.services import StudySyncEngine
 from core.models import Job
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 class TestJobSync:
-    @pytest.fixture()
+    @pytest.fixture
     def setup_data(self):
         provider = Provider.objects.create(name="Test Provider")
         study = Study.objects.create(name="Test Study", provider=provider, external_id="STUDY-1")

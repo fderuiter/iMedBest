@@ -6,7 +6,7 @@ from core.models import Form
 from core.models import Subject as CoreSubject
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_forms_idempotency():
     # Setup
     provider = Provider.objects.create(name="iMednet Provider")
@@ -72,7 +72,7 @@ def test_sync_forms_idempotency():
     assert Form.objects.count() == 3
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_forms_partial_failure():
     provider = Provider.objects.create(name="iMednet Provider")
     study = Study.objects.create(external_id="study-456", name="Test Study 2", provider=provider)
@@ -103,7 +103,7 @@ def test_sync_forms_partial_failure():
     assert not Form.objects.filter(imednet_id="202").exists()
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_forms_soft_deletion():
     provider = Provider.objects.create(name="iMednet Provider")
     study = Study.objects.create(external_id="study-soft", name="Soft Delete Study", provider=provider)
@@ -137,7 +137,7 @@ def test_sync_forms_soft_deletion():
     assert Form.objects.get(imednet_id="302").disabled is False
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_subjects_idempotency_and_keywords():
     # Setup
     provider = Provider.objects.create(name="iMednet Provider")
@@ -189,7 +189,7 @@ def test_sync_subjects_idempotency_and_keywords():
     assert set(subject.keywords.values_list("keyword", flat=True)) == {"tag2", "tag3"}
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_sync_subjects_partial_failure():
     provider = Provider.objects.create(name="iMednet Provider")
     study = Study.objects.create(external_id="study-subj-fail", name="Subject Fail Study", provider=provider)

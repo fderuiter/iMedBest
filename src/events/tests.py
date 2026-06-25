@@ -6,7 +6,7 @@ from events.models import DeliveryAttempt, OutboundEvent, Subscription
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-@pytest.fixture()
+@pytest.fixture
 def test_subscription(mock_hierarchy):
     study, *_ = mock_hierarchy
     return Subscription.objects.create(
@@ -14,7 +14,7 @@ def test_subscription(mock_hierarchy):
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_hierarchy():
     from clinical.models import Provider
 

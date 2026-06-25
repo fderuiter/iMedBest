@@ -5,9 +5,9 @@ from clinical.services import StudySyncEngine
 from core.models import Coding, Form, Subject, User, Variable
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 class TestCodingSync:
-    @pytest.fixture()
+    @pytest.fixture
     def setup_data(self):
         provider = Provider.objects.create(name="iMednet")
         study = Study.objects.create(name="Test Study", provider=provider, external_id="study1")

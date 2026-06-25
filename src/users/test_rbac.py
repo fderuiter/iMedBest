@@ -10,7 +10,7 @@ from users.auth import CustomAdfsAuthCodeBackend
 User = get_user_model()
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 class TestRBAC:
     @pytest.fixture(autouse=True)
     def setup(self):

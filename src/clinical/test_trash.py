@@ -16,7 +16,7 @@ def get_auth_headers():
     return {"HTTP_AUTHORIZATION": f"Bearer {token}", "HTTP_STUDYKEY": "test-study", "HTTP_X_PROVIDER": str(provider.id)}
 
 
-@pytest.mark.django_db()
+@pytest.mark.django_db
 def test_soft_delete_and_restore(client):
     headers = get_auth_headers()
     client.post(

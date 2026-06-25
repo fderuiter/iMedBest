@@ -26,7 +26,7 @@ class AuditMiddleware:
         try:
             response = self.get_response(request)
 
-            if request.path.startswith("/api/clinical"):
+            if request.path.startswith("/api/v1/clinical"):
                 ip_address = get_client_ip(request)
                 user_agent = request.META.get("HTTP_USER_AGENT")
 

@@ -428,7 +428,7 @@ def export_cdisc_task(job_id):
                 OutboundEvent.objects.create(
                     event_type="ExportJob",
                     action="COMPLETED",
-                    payload={"job_id": job.id, "download_url": f"/api/clinical/export/cdisc/{job.id}/download"},
+                    payload={"job_id": job.id, "download_url": f"/api/v1/clinical/export/cdisc/{job.id}/download"},
                 )
         finally:
             import os

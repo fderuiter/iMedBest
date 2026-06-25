@@ -81,7 +81,7 @@ def test_record_variable_validation_warning():
     )
 
     # This should trigger a warning in logs
-    from structlog.testing import capture_logs
+    from core.logging import capture_logs
 
     with capture_logs() as caps:
         Record.objects.create(

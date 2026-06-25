@@ -153,3 +153,7 @@ CELERY_BEAT_SCHEDULE = {
 SESSION_COOKIE_AGE = 3600  # 1 hour
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_SAVE_EVERY_REQUEST = True
+
+from core.logging import configure_logging
+configure_logging()
+

@@ -1,9 +1,9 @@
 import jwt
-import structlog
+from core.logging import get_logger
 from django.http import JsonResponse
 from django_auth_adfs.config import ConfigLoadError
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class JWTRuntimeErrorHandlerMiddleware:

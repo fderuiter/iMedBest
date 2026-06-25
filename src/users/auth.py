@@ -3,7 +3,7 @@ from typing import Any
 
 import jwt
 import requests
-import structlog
+from core.logging import get_logger
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -15,7 +15,7 @@ from ninja.security import HttpBearer
 from .models import OIDCConfiguration
 
 User = get_user_model()
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class CustomAdfsBackendMixin:

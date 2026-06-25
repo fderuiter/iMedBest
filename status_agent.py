@@ -8,8 +8,12 @@ import threading
 import time
 import urllib.request
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+from core.logging import configure_logging, get_logger
+
+configure_logging()
+logger = get_logger(__name__)
 
 PORT = int(os.environ.get("STATUS_PORT", "8080"))
 DB_FILE = os.environ.get("STATUS_DB_FILE", "/data/status.db")

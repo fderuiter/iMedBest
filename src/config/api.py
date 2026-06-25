@@ -4,7 +4,8 @@ import ninja.operation
 import ninja.orm
 import ninja.schema
 from django.conf import settings
-from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
+from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, OperationalError
 from django.http import Http404
 from ninja import NinjaAPI

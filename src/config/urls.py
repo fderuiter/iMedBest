@@ -1,13 +1,16 @@
 from django.contrib import admin
-from django.urls import include, path
 from django.http import HttpResponse
+from django.urls import include, path
 
 from clinical.views import DashboardView, RetriggerTimelineTaskView
 from users.views import LoginView, LogoutView
+
 from .api import api
+
 
 def health_check(request):
     return HttpResponse("OK", status=200)
+
 
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),

@@ -1,45 +1,13 @@
-import ninja.operation
-import ninja.orm
-import ninja.schema
 from django.contrib import admin
 from django.urls import include, path
-from pydantic.alias_generators import to_camel
-
-ninja.schema.Schema.model_config["alias_generator"] = to_camel
-ninja.schema.Schema.model_config["populate_by_name"] = True
-ninja.orm.ModelSchema.model_config["alias_generator"] = to_camel
-ninja.orm.ModelSchema.model_config["populate_by_name"] = True
-
-original_operation_init = ninja.operation.Operation.__init__
-
-
-def custom_operation_init(self, *args, **kwargs):
-    if kwargs.get("by_alias") is None:
-        kwargs["by_alias"] = True
-    original_operation_init(self, *args, **kwargs)
-
-
-ninja.operation.Operation.__init__ = custom_operation_init
-
 from django.http import HttpResponse
-from ninja import NinjaAPI
 
-from audit.api import router as audit_router
-from clinical.api import router as clinical_router
 from clinical.views import DashboardView, RetriggerTimelineTaskView
-from users.api import router as users_router
 from users.views import LoginView, LogoutView
-
+from .api import api
 
 def health_check(request):
     return HttpResponse("OK", status=200)
-
-
-api = NinjaAPI()
-api.add_router("/clinical/", clinical_router, tags=["legacy"], url_name_prefix="legacy")
-api.add_router("/v1/edc/studies/{studyKey}/", clinical_router, tags=["spec-compliant"], url_name_prefix="spec")
-api.add_router("/users/", users_router)
-api.add_router("/audit/", audit_router)
 
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
@@ -48,6 +16,6 @@ urlpatterns = [
     path("oauth2/", include("django_auth_adfs.urls")),
     path("retrigger-timeline/", RetriggerTimelineTaskView.as_view(), name="retrigger_timeline"),
     path("admin/", admin.site.urls),
-    path("api/", api.urls),
+    path("api/v1/", api.urls),
     path("health", health_check, name="health"),
 ]

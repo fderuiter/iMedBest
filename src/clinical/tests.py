@@ -34,7 +34,7 @@ def test_multi_level_data_import(client):
     headers = get_auth_headers("study-1")
     # Level 1
     study_resp = client.post(
-        "/api/clinical/studies",
+        "/api/v1/clinical/studies",
         data={"externalId": "study-1", "name": "Study 1"},
         content_type="application/json",
         **headers,
@@ -43,7 +43,7 @@ def test_multi_level_data_import(client):
     assert study_resp.status_code == 200
 
     site_resp = client.post(
-        "/api/clinical/sites",
+        "/api/v1/clinical/sites",
         data={"externalId": "site-1", "studyExtId": "study-1", "name": "Site 1"},
         content_type="application/json",
         **headers,
@@ -52,7 +52,7 @@ def test_multi_level_data_import(client):
 
     # Level 2
     subject_resp = client.post(
-        "/api/clinical/subjects",
+        "/api/v1/clinical/subjects",
         data={"externalId": "sub-1", "siteExtId": "site-1", "name": "Subject 1"},
         content_type="application/json",
         **headers,
@@ -60,7 +60,7 @@ def test_multi_level_data_import(client):
     assert subject_resp.status_code == 200
 
     form_resp = client.post(
-        "/api/clinical/forms",
+        "/api/v1/clinical/forms",
         data={"externalId": "form-1", "studyExtId": "study-1", "name": "Form 1"},
         content_type="application/json",
         **headers,
@@ -68,7 +68,7 @@ def test_multi_level_data_import(client):
     assert form_resp.status_code == 200
 
     int_resp = client.post(
-        "/api/clinical/intervals",
+        "/api/v1/clinical/intervals",
         data={"externalId": "int-1", "studyExtId": "study-1", "name": "Interval 1"},
         content_type="application/json",
         **headers,
@@ -77,7 +77,7 @@ def test_multi_level_data_import(client):
 
     # Level 3
     var_resp = client.post(
-        "/api/clinical/variables",
+        "/api/v1/clinical/variables",
         data={"externalId": "var-1", "formExtId": "form-1", "name": "Variable 1"},
         content_type="application/json",
         **headers,
@@ -85,7 +85,7 @@ def test_multi_level_data_import(client):
     assert var_resp.status_code == 200
 
     visit_resp = client.post(
-        "/api/clinical/visits",
+        "/api/v1/clinical/visits",
         data={"externalId": "visit-1", "subjectExtId": "sub-1", "intervalExtId": "int-1"},
         content_type="application/json",
         **headers,
@@ -94,7 +94,7 @@ def test_multi_level_data_import(client):
 
     # Level 4
     record_resp = client.post(
-        "/api/clinical/records",
+        "/api/v1/clinical/records",
         data={"externalId": "rec-1", "visitExtId": "visit-1", "variableExtId": "var-1", "value": "120/80"},
         content_type="application/json",
         **headers,
@@ -113,37 +113,37 @@ def test_longitudinal_reconstruction(client):
     headers = get_auth_headers("study-2")
     # Setup data
     client.post(
-        "/api/clinical/studies",
+        "/api/v1/clinical/studies",
         data={"externalId": "study-2", "name": "Study 2"},
         content_type="application/json",
         **headers,
     )
     client.post(
-        "/api/clinical/sites",
+        "/api/v1/clinical/sites",
         data={"externalId": "site-2", "studyExtId": "study-2", "name": "Site 2"},
         content_type="application/json",
         **headers,
     )
     client.post(
-        "/api/clinical/subjects",
+        "/api/v1/clinical/subjects",
         data={"externalId": "sub-2", "siteExtId": "site-2", "name": "Subject 2"},
         content_type="application/json",
         **headers,
     )
     client.post(
-        "/api/clinical/intervals",
+        "/api/v1/clinical/intervals",
         data={"externalId": "int-2", "studyExtId": "study-2", "name": "Interval 2"},
         content_type="application/json",
         **headers,
     )
     client.post(
-        "/api/clinical/forms",
+        "/api/v1/clinical/forms",
         data={"externalId": "form-2", "studyExtId": "study-2", "name": "Form 2"},
         content_type="application/json",
         **headers,
     )
     client.post(
-        "/api/clinical/variables",
+        "/api/v1/clinical/variables",
         data={"externalId": "var-2", "formExtId": "form-2", "name": "Variable 2"},
         content_type="application/json",
         **headers,
@@ -151,7 +151,7 @@ def test_longitudinal_reconstruction(client):
 
     # Baseline visit
     client.post(
-        "/api/clinical/visits",
+        "/api/v1/clinical/visits",
         data={
             "externalId": "visit-base",
             "subjectExtId": "sub-2",
@@ -164,7 +164,7 @@ def test_longitudinal_reconstruction(client):
 
     # Record at Day 10
     client.post(
-        "/api/clinical/records",
+        "/api/v1/clinical/records",
         data={
             "externalId": "rec-day10",
             "visitExtId": "visit-base",
@@ -179,7 +179,7 @@ def test_longitudinal_reconstruction(client):
 
     # Record at Day 5 (ingested out of order)
     client.post(
-        "/api/clinical/records",
+        "/api/v1/clinical/records",
         data={
             "externalId": "rec-day5",
             "visitExtId": "visit-base",
@@ -202,11 +202,11 @@ def test_longitudinal_reconstruction(client):
     assert rec_day5.offset_days == 5
 
     # Check export order (source sequence priorities)
-    resp = client.get("/api/clinical/export/cdisc", **headers)
+    resp = client.get("/api/v1/clinical/export/cdisc", **headers)
     assert resp.status_code == 200
     job_id = resp.json()["job_id"]
 
-    resp_dl = client.get(f"/api/clinical/export/cdisc/{job_id}/download", **headers)
+    resp_dl = client.get(f"/api/v1/clinical/export/cdisc/{job_id}/download", **headers)
     if resp_dl.status_code != 200:
         from clinical.models import ExportJob
 
@@ -248,7 +248,7 @@ def test_sync_job_endpoint(client):
         ]
     }
 
-    resp = client.post("/api/clinical/sync-jobs", data=payload, content_type="application/json", **headers)
+    resp = client.post("/api/v1/clinical/sync-jobs", data=payload, content_type="application/json", **headers)
     assert resp.status_code == 200
     data = resp.json()
     assert "jobId" in data
@@ -287,7 +287,7 @@ def test_sync_job_atomic_failure(client):
         ]
     }
 
-    resp = client.post("/api/clinical/sync-jobs", data=payload, content_type="application/json", **headers)
+    resp = client.post("/api/v1/clinical/sync-jobs", data=payload, content_type="application/json", **headers)
     assert resp.status_code == 400
 
     # Verify rollback: Study should NOT be created

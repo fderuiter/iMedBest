@@ -27,7 +27,7 @@ def oidc_login(request, provider: str):
     params = {
         "client_id": config.client_id,
         "response_type": "code",
-        "redirect_uri": request.build_absolute_uri(f"/api/users/oidc/callback?provider={provider}"),
+        "redirect_uri": request.build_absolute_uri(f"/api/v1/users/oidc/callback?provider={provider}"),
         "scope": "openid profile email",
     }
     url = f"{auth_url}?{urllib.parse.urlencode(params)}"

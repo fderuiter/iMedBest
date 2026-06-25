@@ -143,7 +143,7 @@ class IMednetAPIAuth(APIKeyHeader):
 def check_write_allowed(request):
     from ninja.errors import HttpError
 
-    if getattr(request, "auth_method", "") == "SpecCompliant" or "/v1/" in request.path:
+    if getattr(request, "auth_method", "") == "SpecCompliant" or "/v1/edc/" in request.path:
         raise HttpError(405, "Method Not Allowed")
     if not getattr(request, "provider", None):
         raise HttpError(400, "Missing valid provider context")
@@ -595,7 +595,7 @@ def _queue_single_task(request, entity_type: str, payload_obj) -> tuple[int, Any
 
         run_validation_for_job.delay(job.id)
 
-        status_url = f"/api/clinical/sync-jobs/{job.id}"
+        status_url = f"/api/v1/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
     except Exception as e:
         return 400, {"message": f"Sync failed. No data was saved. Error: {e!s}"}
@@ -768,7 +768,7 @@ def create_sync_job(request, payload: SyncJobRequest, studyKey: str | None = Non
 
                 orchestrate_sync_job.delay(job.id)
 
-        status_url = f"/api/clinical/sync-jobs/{job.id}"
+        status_url = f"/api/v1/clinical/sync-jobs/{job.id}"
         return 200, SyncJobResponse(job_id=job.id, status=job.status, message="Sync job queued", status_url=status_url)
     except Exception as e:
         return 400, {"message": f"Sync failed. Error: {e!s}"}

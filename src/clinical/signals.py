@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from django.core import serializers
 from django.db.models.deletion import Collector
@@ -41,7 +41,7 @@ def archive_instance_and_descendants(instance):
 
     data_str = serializers.serialize("json", objects_to_serialize)
 
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     rand_id = uuid.uuid4().hex[:8]
     filename = f"archive_{instance.__class__.__name__}_{instance.external_id}_{timestamp}_{rand_id}.json"
 

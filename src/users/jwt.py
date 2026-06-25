@@ -12,8 +12,8 @@ from users.models import OIDCConfiguration
 def create_jwt_token(user):
     payload = {
         "user_id": user.id,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24),
-        "iat": datetime.datetime.utcnow(),
+        "exp": datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=24),
+        "iat": datetime.datetime.now(datetime.UTC),
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 

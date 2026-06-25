@@ -1,5 +1,5 @@
 import gzip
-from datetime import datetime
+from datetime import UTC, datetime
 
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
@@ -13,7 +13,7 @@ class Command(BaseCommand):
     help = "Automated full database backup"
 
     def handle(self, *args, **options):
-        filename = f"db_backup_{datetime.now().strftime('%Y%m%d%H%M%S')}.json.gz"
+        filename = f"db_backup_{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}.json.gz"
         # We save directly using storage_adapter, and place it in a 'backups' namespace
         # which will be relative to the adapter's root directory.
 

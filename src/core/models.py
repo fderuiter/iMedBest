@@ -1,5 +1,6 @@
-from core.logging import get_logger
 from django.db import models
+
+from core.logging import get_logger
 
 logger = get_logger(__name__)
 

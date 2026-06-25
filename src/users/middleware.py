@@ -1,7 +1,8 @@
 import jwt
-from core.logging import get_logger
 from django.http import JsonResponse
 from django_auth_adfs.config import ConfigLoadError
+
+from core.logging import get_logger
 
 logger = get_logger(__name__)
 

@@ -3,7 +3,6 @@ from typing import Any
 
 import jwt
 import requests
-from core.logging import get_logger
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -11,6 +10,8 @@ from django.http import HttpRequest
 from django_auth_adfs.backend import AdfsAccessTokenBackend, AdfsAuthCodeBackend
 from jwt import PyJWKClient
 from ninja.security import HttpBearer
+
+from core.logging import get_logger
 
 from .models import OIDCConfiguration
 

@@ -1,14 +1,13 @@
 import http.server
 import json
-import logging
 import os
 import socketserver
 import sqlite3
+import sys
 import threading
 import time
 import urllib.request
 
-import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from core.logging import configure_logging, get_logger
 

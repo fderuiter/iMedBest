@@ -155,5 +155,5 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_SAVE_EVERY_REQUEST = True
 
 from core.logging import configure_logging
-configure_logging()
 
+configure_logging()

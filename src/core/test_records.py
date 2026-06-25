@@ -7,7 +7,7 @@ from core.models import Form, Interval, Record, Variable
 from core.models import Subject as CoreSubject
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_records_success():
     # Setup
     provider = Provider.objects.create(name="iMednet Provider")
@@ -58,7 +58,7 @@ def test_sync_records_success():
     assert set(record.keywords.values_list("keyword", flat=True)) == {"tag1", "tag2"}
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_record_variable_validation_warning():
     # Setup
     provider = Provider.objects.create(name="iMednet Provider")
@@ -101,7 +101,7 @@ def test_record_variable_validation_warning():
     assert any(log["variable_name"] == "unknown_var" for log in caps)
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_submit_records_creates_job():
     from django.contrib.auth import get_user_model
 

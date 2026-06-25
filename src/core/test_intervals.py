@@ -5,7 +5,7 @@ from clinical.services import StudySyncEngine
 from core.models import Form, Interval
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_intervals_idempotency_and_m2m():
     # Setup
     provider = Provider.objects.create(name="iMednet Provider")
@@ -50,7 +50,7 @@ def test_sync_intervals_idempotency_and_m2m():
     assert interval.forms.first().imednet_id == "f1"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_intervals_partial_failure():
     provider = Provider.objects.create(name="iMednet Provider")
     study = Study.objects.create(external_id="study-456", name="Test Study 2", provider=provider)
@@ -83,7 +83,7 @@ def test_sync_intervals_partial_failure():
     assert not Interval.objects.filter(imednet_id="int_fail").exists()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_intervals_soft_deletion():
     provider = Provider.objects.create(name="iMednet Provider")
     study = Study.objects.create(external_id="study-soft", name="Soft Delete Study", provider=provider)

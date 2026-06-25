@@ -8,7 +8,7 @@ from clinical.utils import parse_imednet_date_array
 from core.models import User
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_parse_imednet_date_array():
     # Valid date array
     date_array = [2026, 5, 13, 14, 6, 50, 612000000]
@@ -28,7 +28,7 @@ def test_parse_imednet_date_array():
     assert parse_imednet_date_array([2026, "invalid", 13]) is None
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_users():
     provider = Provider.objects.create(name="Test Provider")
     study = Study.objects.create(name="Test Study", external_id="study-1", provider=provider)

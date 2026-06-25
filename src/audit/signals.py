@@ -1,3 +1,5 @@
+import contextvars
+
 from django.contrib.auth.signals import user_logged_in, user_logged_out
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.db.utils import OperationalError
@@ -9,6 +11,8 @@ from .tasks import create_audit_log_task
 from .utils import extract_study_id, sanitize_changes
 
 EXCLUDED_MODELS = ["AuditLog", "Session", "LogEntry", "ContentType", "Permission", "Group", "Revision", "Migration"]
+
+audit_override_bulk_flags = contextvars.ContextVar("audit_override_bulk_flags", default=False)
 
 
 def get_client_ip(request):
@@ -62,7 +66,7 @@ def safe_model_to_dict(instance):
 
 @receiver(pre_save)
 def track_changes(sender, instance, **kwargs):
-    if kwargs.get("raw"):
+    if kwargs.get("raw") and not audit_override_bulk_flags.get():
         return
     if sender.__name__ in EXCLUDED_MODELS:
         return
@@ -78,7 +82,7 @@ def track_changes(sender, instance, **kwargs):
 
 @receiver(post_save)
 def log_save(sender, instance, created, **kwargs):
-    if kwargs.get("raw"):
+    if kwargs.get("raw") and not audit_override_bulk_flags.get():
         return
     if sender.__name__ in EXCLUDED_MODELS:
         return
@@ -97,7 +101,7 @@ def log_save(sender, instance, created, **kwargs):
 
 @receiver(post_delete)
 def log_delete(sender, instance, **kwargs):
-    if kwargs.get("raw"):
+    if kwargs.get("raw") and not audit_override_bulk_flags.get():
         return
     create_audit_log("DELETE", instance)
 

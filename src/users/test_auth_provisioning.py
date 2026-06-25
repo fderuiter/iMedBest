@@ -8,7 +8,7 @@ from django_auth_adfs.backend import AdfsAuthCodeBackend
 User = get_user_model()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_user_provisioning_and_profile_creation():
     """
     Test that a local Django User and its UserProfile are created
@@ -47,7 +47,7 @@ def test_user_provisioning_and_profile_creation():
         assert user.profile.notifications_enabled is True
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_manual_user_creation_triggers_profile_creation():
     """
     Test that manually creating a user also triggers UserProfile creation.

@@ -6,7 +6,7 @@ from clinical.services import StudySyncEngine
 from core.models import RecordRevision, User
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_record_revisions_success():
     # Setup
     provider = Provider.objects.create(name="iMednet Provider")
@@ -54,7 +54,7 @@ def test_sync_record_revisions_success():
     assert rev.user_profile == user
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_record_revisions_idempotency():
     provider = Provider.objects.create(name="iMednet Provider")
     study = Study.objects.create(external_id="study-123", name="Test Study", provider=provider)
@@ -102,7 +102,7 @@ def test_sync_record_revisions_idempotency():
     assert rev.record_status == "Signed"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_record_revisions_partial_failure():
     provider = Provider.objects.create(name="iMednet Provider")
     study = Study.objects.create(external_id="study-123", name="Test Study", provider=provider)

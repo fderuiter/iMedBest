@@ -10,7 +10,7 @@ from users.auth import CustomAdfsAuthCodeBackend
 User = get_user_model()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_service_principal_claims_logic():
     backend = CustomAdfsAuthCodeBackend()
     rf = RequestFactory()

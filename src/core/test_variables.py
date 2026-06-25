@@ -5,7 +5,7 @@ from clinical.services import StudySyncEngine
 from core.models import Form, Variable
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_variables_idempotency_and_form_lookup():
     # Setup
     provider = Provider.objects.create(name="iMednet Provider")
@@ -48,7 +48,7 @@ def test_sync_variables_idempotency_and_form_lookup():
     assert variable.variable_name == "Var 1 Updated"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_variables_partial_failure():
     provider = Provider.objects.create(name="iMednet Provider")
     study = Study.objects.create(external_id="study-456", name="Test Study 2", provider=provider)
@@ -81,7 +81,7 @@ def test_sync_variables_partial_failure():
     assert not Variable.objects.filter(imednet_id="v_fail").exists()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_variables_soft_deletion():
     provider = Provider.objects.create(name="iMednet Provider")
     study = Study.objects.create(external_id="study-soft", name="Soft Delete Study", provider=provider)
@@ -125,7 +125,7 @@ def test_sync_variables_soft_deletion():
     assert Variable.objects.filter(study=study, deleted=False).count() == 1
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_variables_form_lookup_failure():
     # Setup
     provider = Provider.objects.create(name="iMednet Provider")

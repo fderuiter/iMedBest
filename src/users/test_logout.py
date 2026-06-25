@@ -7,7 +7,7 @@ from django.urls import reverse
 User = get_user_model()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 class TestLogoutView:
     def test_logout_destroys_session(self):
         client = Client()
@@ -65,7 +65,7 @@ class TestLogoutView:
         assert settings.SESSION_SAVE_EVERY_REQUEST is True
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_session_cookie_expiry_on_login(client):
     # Standard django login to check cookie
     User.objects.create_user(username="testuser3", password="secret_password")  # noqa: S106

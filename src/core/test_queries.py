@@ -7,7 +7,7 @@ from clinical.services import StudySyncEngine
 from core.models import Query, QueryComment, Subject, Variable
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_queries_create():
     provider = Provider.objects.create(name="iMednet")
     study = Study.objects.create(name="Test Study", provider=provider, external_id="study1")
@@ -43,7 +43,7 @@ def test_sync_queries_create():
     assert comment.date_created == datetime(2023, 10, 27, 10, 0, 0, tzinfo=UTC)
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_queries_rebuild_comments():
     provider = Provider.objects.create(name="iMednet")
     study = Study.objects.create(name="Test Study", provider=provider, external_id="study1")
@@ -78,7 +78,7 @@ def test_sync_queries_rebuild_comments():
     assert set(query.comments.values_list("comment", flat=True)) == {"C1", "C2"}
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_queries_partial_failure():
     provider = Provider.objects.create(name="iMednet")
     study = Study.objects.create(name="Test Study", provider=provider, external_id="study1")
@@ -111,7 +111,7 @@ def test_sync_queries_partial_failure():
     assert Query.objects.count() == 1
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db()
 def test_sync_queries_variable_lookup():
     provider = Provider.objects.create(name="iMednet")
     study = Study.objects.create(name="Test Study", provider=provider, external_id="study1")

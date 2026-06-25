@@ -146,9 +146,9 @@ class UnifiedStorageAdapter:
             return path
         return os.path.join(self.base_dir, path)
 
-    def open(self, path, mode="rb"):
+    def open(self, path, mode="rb", **kwargs):
         full_path = self.get_absolute_path(path)
-        return open(full_path, mode)  # noqa: SIM115
+        return open(full_path, mode, **kwargs)  # noqa: SIM115
 
 
 class ComplianceStorageProxy:
@@ -286,15 +286,15 @@ class ComplianceStorageProxy:
             return self.baa_adapter.get_absolute_path(path)
         return self.primary_adapter.get_absolute_path(path)
 
-    def open(self, path, mode="rb", contains_phi=None):
+    def open(self, path, mode="rb", contains_phi=None, **kwargs):
         if contains_phi is None:
             contains_phi = True
         if contains_phi is True:
             self._log_audit(f"OPEN({mode})", path, contains_phi=True)
-            return self.baa_adapter.open(path, mode)
+            return self.baa_adapter.open(path, mode, **kwargs)
         # Also audit non-PHI accesses
         self._log_audit(f"OPEN({mode})", path, contains_phi=False)
-        return self.primary_adapter.open(path, mode)
+        return self.primary_adapter.open(path, mode, **kwargs)
 
 
 root_dir = str(getattr(settings, "ROOT_DIR", tempfile.gettempdir()))

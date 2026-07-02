@@ -9,7 +9,6 @@ from .models import (
     Coding,
     Form,
     Interval,
-    IntervalForm,
     Job,
     Query,
     QueryComment,

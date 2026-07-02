@@ -1,4 +1,5 @@
-from typing import List
+
+from typing import Annotated
 
 from ninja import Query as NinjaQuery
 from ninja import Router
@@ -13,21 +14,19 @@ from .schemas import RecordOut, SubjectOut
 router = Router(tags=["Core API"])
 
 
-@router.get("/subjects", response=List[SubjectOut])
+@router.get("/subjects", response=list[SubjectOut])
 @paginate(SafeLimitOffsetPagination)
-def list_subjects(request, filters: SubjectFilter = NinjaQuery(...)):
+def list_subjects(request, filters: Annotated[SubjectFilter, NinjaQuery()]):
     qs = Subject.objects.select_related("study", "site").prefetch_related("keywords").order_by("id")
-    qs = filters.filter(qs)
-    return qs
+    return filters.filter(qs)
 
 
-@router.get("/records", response=List[RecordOut])
+@router.get("/records", response=list[RecordOut])
 @paginate(SafeLimitOffsetPagination)
-def list_records(request, filters: RecordFilter = NinjaQuery(...)):
+def list_records(request, filters: Annotated[RecordFilter, NinjaQuery()]):
     qs = (
         Record.objects.select_related("study", "subject", "site", "form", "interval", "visit")
         .prefetch_related("keywords")
         .order_by("id")
     )
-    qs = filters.filter(qs)
-    return qs
+    return filters.filter(qs)

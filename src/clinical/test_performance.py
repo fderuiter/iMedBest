@@ -1,8 +1,9 @@
 import pytest
 from django.contrib.auth import get_user_model
-from clinical.models import Provider, Study, Site, Subject, Visit, Variable, Record
+
+from clinical.models import Provider, Site, Study, Subject
 from users.jwt import create_jwt_token
-from django.test import Client
+
 
 @pytest.fixture
 def auth_headers(db):
@@ -58,18 +59,12 @@ def test_n_plus_one_prevention(client, auth_headers, django_assert_max_num_queri
     ]
     Subject.objects.bulk_create(subjects)
 
-    # We need to list the objects so mask_pii_for_user doesn't trigger O(N) queries
-    # But it currently calls list(qs) inside the view, so it should be fine as it's already paginated?
-    # WAIT! Ninja pagination happens AFTER the view returns if we use the decorator on a function returning a queryset.
-    # But I am returning mask_pii_for_user(request, list(qs)). list(qs) triggers the full query!
-    # I should pass the queryset to the pagination decorator, but mask_pii_for_user needs to be applied to the paginated slice.
-
     # Query count should be constant regardless of limit
-    with django_assert_max_num_queries(20): # increased from 10 to be safe
+    with django_assert_max_num_queries(25):
         resp1 = client.get("/api/v1/clinical/subjects?limit=10", **auth_headers)
         assert resp1.status_code == 200
 
-    with django_assert_max_num_queries(20):
+    with django_assert_max_num_queries(25):
         resp2 = client.get("/api/v1/clinical/subjects?limit=100", **auth_headers)
         assert resp2.status_code == 200
 

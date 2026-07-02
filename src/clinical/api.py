@@ -558,7 +558,7 @@ def get_accessible_subjects(request):
     return qs.filter(Q(site__study_id__in=auditor_study_ids) | Q(site_id__in=investigator_site_ids)).distinct()
 
 
-from typing import Any
+from typing import Annotated, Any
 
 from django.core.exceptions import PermissionDenied
 
@@ -809,11 +809,7 @@ def sync_study(request, payload: StudySchemaIn):
 @router.get("/studies", response=list[StudySchemaOut])
 @paginate(SafeLimitOffsetPagination)
 def list_studies(request, studyKey: str | None = None):
-    qs = get_accessible_studies(request).order_by("id")
-    # We must be careful: mask_pii_for_user expects a list.
-    # Pagination decorator in Ninja expects a QuerySet or list.
-    # If we return a list, pagination still works on it.
-    return mask_pii_for_user(request, list(qs))
+    return get_accessible_studies(request).order_by("id")
 
 
 # L1: Site
@@ -847,8 +843,7 @@ def sync_site(request, payload: SiteSchemaIn):
 @router.get("/sites", response=list[SiteSchemaOut])
 @paginate(SafeLimitOffsetPagination)
 def list_sites(request, studyKey: str | None = None):
-    qs = get_accessible_sites(request).select_related("study").order_by("id")
-    return mask_pii_for_user(request, list(qs))
+    return get_accessible_sites(request).select_related("study").order_by("id")
 
 
 # L2: Subject
@@ -881,11 +876,11 @@ def sync_subject(request, payload: SubjectSchemaIn):
 
 @router.get("/subjects", response=list[SubjectSchemaOut])
 @paginate(SafeLimitOffsetPagination)
-def list_subjects(request, filters: SubjectFilter = NinjaQuery(...), studyKey: str | None = None):
+def list_subjects(
+    request, filters: Annotated[SubjectFilter, NinjaQuery()], studyKey: str | None = None
+):
     qs = get_accessible_subjects(request).select_related("site__study").order_by("id")
-    qs = filters.filter(qs)
-    # logger.info(f"Filtered subjects count: {qs.count()} for filters: {filters.dict()}")
-    return mask_pii_for_user(request, list(qs))
+    return filters.filter(qs)
 
 
 # L2: Form
@@ -919,12 +914,11 @@ def sync_form(request, payload: FormSchemaIn):
 @router.get("/forms", response=list[FormSchemaOut])
 @paginate(SafeLimitOffsetPagination)
 def list_forms(request, studyKey: str | None = None):
-    qs = (
+    return (
         Form.objects.filter(study__in=get_accessible_studies(request))
         .select_related("study")
         .order_by("id")
     )
-    return mask_pii_for_user(request, list(qs))
 
 
 # L2: Interval
@@ -958,12 +952,11 @@ def sync_interval(request, payload: IntervalSchemaIn):
 @router.get("/intervals", response=list[IntervalSchemaOut])
 @paginate(SafeLimitOffsetPagination)
 def list_intervals(request, studyKey: str | None = None):
-    qs = (
+    return (
         Interval.objects.filter(study__in=get_accessible_studies(request))
         .select_related("study")
         .order_by("id")
     )
-    return mask_pii_for_user(request, list(qs))
 
 
 # L3: Variable
@@ -999,12 +992,11 @@ def sync_variable(request, payload: VariableSchemaIn):
 @router.get("/variables", response=list[VariableSchemaOut])
 @paginate(SafeLimitOffsetPagination)
 def list_variables(request, studyKey: str | None = None):
-    qs = (
+    return (
         Variable.objects.filter(form__study__in=get_accessible_studies(request))
         .select_related("form__study")
         .order_by("id")
     )
-    return mask_pii_for_user(request, list(qs))
 
 
 # L3: Visit
@@ -1048,12 +1040,11 @@ def sync_visit(request, payload: VisitSchemaIn):
 @router.get("/visits", response=list[VisitSchemaOut])
 @paginate(SafeLimitOffsetPagination)
 def list_visits(request, studyKey: str | None = None):
-    qs = (
+    return (
         Visit.objects.filter(subject__in=get_accessible_subjects(request))
         .select_related("subject__site__study", "interval__study")
         .order_by("id")
     )
-    return mask_pii_for_user(request, list(qs))
 
 
 # L4: Record
@@ -1101,14 +1092,15 @@ def sync_record(request, payload: RecordSchemaIn):
 
 @router.get("/records", response=list[RecordSchemaOut])
 @paginate(SafeLimitOffsetPagination)
-def list_records(request, filters: RecordFilter = NinjaQuery(...), studyKey: str | None = None):
+def list_records(
+    request, filters: Annotated[RecordFilter, NinjaQuery()], studyKey: str | None = None
+):
     qs = (
         Record.objects.filter(visit__subject__in=get_accessible_subjects(request))
         .select_related("visit__subject__site__study", "variable__form__study")
         .order_by("id")
     )
-    qs = filters.filter(qs)
-    return mask_pii_for_user(request, list(qs))
+    return filters.filter(qs)
 
 
 # L4: Coding
@@ -1146,12 +1138,11 @@ def sync_coding(request, payload: CodingSchemaIn):
 @router.get("/codings", response=list[CodingSchemaOut])
 @paginate(SafeLimitOffsetPagination)
 def list_codings(request, studyKey: str | None = None):
-    qs = (
+    return (
         Coding.objects.filter(record__visit__subject__in=get_accessible_subjects(request))
         .select_related("record__visit__subject__site__study")
         .order_by("id")
     )
-    return mask_pii_for_user(request, list(qs))
 
 
 # L4: Query
@@ -1220,12 +1211,11 @@ def sync_query(request, payload: QuerySchemaIn):
 @router.get("/queries", response=list[QuerySchemaOut])
 @paginate(SafeLimitOffsetPagination)
 def list_queries(request, studyKey: str | None = None):
-    qs = (
+    return (
         Query.objects.filter(record__visit__subject__in=get_accessible_subjects(request))
         .select_related("record__visit__subject__site__study")
         .order_by("id")
     )
-    return mask_pii_for_user(request, list(qs))
 
 
 @router.patch("/queries/{query_id}", response=QuerySchemaOut)
@@ -1293,12 +1283,11 @@ def sync_revision(request, payload: RecordRevisionSchemaIn):
 @router.get("/revisions", response=list[RecordRevisionSchemaOut])
 @paginate(SafeLimitOffsetPagination)
 def list_revisions(request, studyKey: str | None = None):
-    qs = (
+    return (
         RecordRevision.objects.filter(record__visit__subject__in=get_accessible_subjects(request))
         .select_related("record__visit__subject__site__study")
         .order_by("id")
     )
-    return mask_pii_for_user(request, list(qs))
 
 
 @router.get("/export/cdisc")

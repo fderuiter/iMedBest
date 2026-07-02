@@ -1,9 +1,11 @@
-import pytest
-from django.utils import timezone
-from pydantic import ValidationError
-from core.schemas import SubjectIn, SubjectOut, ResilientDateSchema
-from core.models import Subject
 from datetime import datetime
+
+import pytest
+from pydantic import ValidationError
+
+from core.models import Subject
+from core.schemas import ResilientDateSchema, SubjectIn, SubjectOut
+
 
 @pytest.mark.django_db
 def test_subject_in_extra_fields():
@@ -43,7 +45,7 @@ def test_resilient_date_parsing():
 @pytest.mark.django_db
 def test_subject_out_serialization(db):
     """Test SubjectOut serialization with nested data (if any)."""
-    from clinical.models import Provider, Study, Site
+    from clinical.models import Provider, Site, Study
     provider = Provider.objects.create(name="Test Provider")
     study = Study.objects.create(name="Test Study", provider=provider, external_id="S1")
     site = Site.objects.create(name="Test Site", study=study, provider=provider, external_id="SITE1")

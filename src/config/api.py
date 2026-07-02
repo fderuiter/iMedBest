@@ -123,6 +123,7 @@ def handle_generic_exception(request, exc):
 
 # 4. Implement dynamic loading and mounting of domain routers
 api.add_router("/clinical/", "clinical.api.router", tags=["Clinical"])
+api.add_router("/core/", "core.api.router", tags=["Core"])
 # Restore spec-compliant mount point
 api.add_router(
     "/v1/edc/studies/{studyKey}/",

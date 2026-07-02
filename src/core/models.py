@@ -262,6 +262,7 @@ class Subject(SyncedResourceBase):
     subject_key = models.CharField(max_length=100, unique=True, db_index=True, help_text="External subject key.")
     subject_status = models.CharField(max_length=100, help_text="Status of the subject.")
     enrollment_start_date = models.DateTimeField(null=True, blank=True, help_text="Enrollment start date.")
+    date_of_birth = models.DateField(null=True, blank=True, db_index=True)
     deleted = models.BooleanField(default=False, help_text="Indicates if the subject is deleted in iMednet.")
 
     def __str__(self):

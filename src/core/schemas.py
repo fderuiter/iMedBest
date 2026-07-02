@@ -29,10 +29,11 @@ class ResilientDateSchema(Schema):
     @classmethod
     def parse_imednet_date(cls, v: Any) -> Any:
         if isinstance(v, list) and len(v) >= 3:
-            # Handle [year, month, day, hour, minute, second, nanoseconds]
             try:
+                from datetime import UTC
+
                 args = v[:6]
-                return datetime(*args)
+                return datetime(*args, tzinfo=UTC)
             except (ValueError, TypeError):
                 return v
         return v

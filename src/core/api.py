@@ -1,4 +1,3 @@
-
 from typing import Annotated
 
 from ninja import Query as NinjaQuery

@@ -876,9 +876,7 @@ def sync_subject(request, payload: SubjectSchemaIn):
 
 @router.get("/subjects", response=list[SubjectSchemaOut])
 @paginate(SafeLimitOffsetPagination)
-def list_subjects(
-    request, filters: Annotated[SubjectFilter, NinjaQuery()], studyKey: str | None = None
-):
+def list_subjects(request, filters: Annotated[SubjectFilter, NinjaQuery()], studyKey: str | None = None):
     qs = get_accessible_subjects(request).select_related("site__study").order_by("id")
     return filters.filter(qs)
 
@@ -914,11 +912,7 @@ def sync_form(request, payload: FormSchemaIn):
 @router.get("/forms", response=list[FormSchemaOut])
 @paginate(SafeLimitOffsetPagination)
 def list_forms(request, studyKey: str | None = None):
-    return (
-        Form.objects.filter(study__in=get_accessible_studies(request))
-        .select_related("study")
-        .order_by("id")
-    )
+    return Form.objects.filter(study__in=get_accessible_studies(request)).select_related("study").order_by("id")
 
 
 # L2: Interval
@@ -952,11 +946,7 @@ def sync_interval(request, payload: IntervalSchemaIn):
 @router.get("/intervals", response=list[IntervalSchemaOut])
 @paginate(SafeLimitOffsetPagination)
 def list_intervals(request, studyKey: str | None = None):
-    return (
-        Interval.objects.filter(study__in=get_accessible_studies(request))
-        .select_related("study")
-        .order_by("id")
-    )
+    return Interval.objects.filter(study__in=get_accessible_studies(request)).select_related("study").order_by("id")
 
 
 # L3: Variable
@@ -1092,9 +1082,7 @@ def sync_record(request, payload: RecordSchemaIn):
 
 @router.get("/records", response=list[RecordSchemaOut])
 @paginate(SafeLimitOffsetPagination)
-def list_records(
-    request, filters: Annotated[RecordFilter, NinjaQuery()], studyKey: str | None = None
-):
+def list_records(request, filters: Annotated[RecordFilter, NinjaQuery()], studyKey: str | None = None):
     qs = (
         Record.objects.filter(visit__subject__in=get_accessible_subjects(request))
         .select_related("visit__subject__site__study", "variable__form__study")

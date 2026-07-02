@@ -188,7 +188,9 @@ class Site(ClinicalEntity):
 class Subject(ClinicalEntity):
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="subjects")
     name = models.CharField(max_length=255, blank=True)
-    pii_fields = ["name"]
+    status = models.CharField(max_length=50, default="active", db_index=True)
+    date_of_birth = models.DateField(null=True, blank=True, db_index=True)
+    pii_fields = ["name", "date_of_birth"]
 
     @property
     def baseline_date(self):
@@ -244,7 +246,8 @@ class Record(ClinicalEntity):
     visit = models.ForeignKey(Visit, on_delete=models.CASCADE, related_name="records")
     variable = models.ForeignKey(Variable, on_delete=models.CASCADE, related_name="records")
     value = models.TextField(blank=True)
-    pii_fields = ["value"]
+    record_data = models.JSONField(default=dict, blank=True)
+    pii_fields = ["value", "record_data"]
 
     def get_subject(self):
         return self.visit.subject
